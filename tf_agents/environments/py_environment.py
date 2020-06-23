@@ -43,10 +43,6 @@ class PyEnvironment(object):
   """
 
   def __init__(self):
-
-    """Nitty: change time_step spec"""
-    self.nAgents = 1
-
     self._current_time_step = None
     common.assert_members_are_not_overridden(
         base_cls=PyEnvironment, instance=self, black_list=('reset', 'step'))

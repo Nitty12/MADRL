@@ -267,7 +267,7 @@ class TFAgent(tf.Module):
 
   """Nitty: edited for centralized training of critic in ddpg"""
   # def train(self, experience, weights=None, **kwargs):
-  def train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, weights=None, **kwargs):
+  def train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, index, weights=None, **kwargs):
     """Trains the agent.
 
     Args:
@@ -318,10 +318,11 @@ class TFAgent(tf.Module):
     if self._enable_functions:
       loss_info = self._train_fn(
           time_steps=time_steps, policy_steps=policy_steps, next_time_steps=next_time_steps,
-          target_actions=target_actions, main_actions=main_actions, weights=weights, **kwargs)
+          target_actions=target_actions, main_actions=main_actions, index=index, weights=weights, **kwargs)
     else:
       loss_info = self._train(time_steps=time_steps, policy_steps=policy_steps, next_time_steps=next_time_steps,
-                              target_actions=target_actions, main_actions=main_actions, weights=weights, **kwargs)
+                              target_actions=target_actions, main_actions=main_actions, index=index, weights=weights,
+                              **kwargs)
 
     if not isinstance(loss_info, LossInfo):
       raise TypeError(
@@ -430,7 +431,7 @@ class TFAgent(tf.Module):
   """Nitty: edited for centralized training of critic in ddpg"""
   @abc.abstractmethod
   # def _train(self, experience, weights):
-  def _train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, weights):
+  def _train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, index, weights):
     """Returns an op to train the agent.
 
     This method *must* increment self.train_step_counter exactly once.

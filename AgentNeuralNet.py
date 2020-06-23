@@ -72,7 +72,8 @@ class AgentNeuralNet:
                                actor_optimizer=self.optimizer, critic_optimizer=self.optimizer, ou_stddev=0.2,
                                ou_damping=0.15,
                                target_update_tau=0.001, target_update_period=10, gamma=self.discount_factor,
-                               train_step_counter=train_step_counter)
+                               train_step_counter=train_step_counter,
+                               debug_summaries=True)
 
         self.agent.initialize()
 

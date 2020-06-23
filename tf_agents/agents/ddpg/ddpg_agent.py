@@ -259,7 +259,7 @@ class DdpgAgent(tf_agent.TFAgent):
                                          'optimize.')
       tape.watch(trainable_actor_variables)
       """Nitty: edited for centralized training of critic"""
-      actor_loss = self.actor_loss(time_steps, main_actions, weights=weights, training=True)
+      actor_loss = self.actor_loss(time_steps, main_actions, index, weights=weights, training=True)
       # actor_loss = self.actor_loss(time_steps, weights=weights, training=True)
 
     tf.debugging.check_numerics(actor_loss, 'Actor loss is inf or nan.')
@@ -267,7 +267,6 @@ class DdpgAgent(tf_agent.TFAgent):
     self._apply_gradients(actor_grads, trainable_actor_variables,
                           self._actor_optimizer)
 
-    self.train_step_counter.assign_add(1)
     self._update_target()
 
     # TODO(b/124382360): Compute per element TD loss and return in loss_info.
@@ -331,7 +330,7 @@ class DdpgAgent(tf_agent.TFAgent):
       #     self._reward_scale_factor * next_time_steps.reward +
       #     self._gamma * next_time_steps.discount * target_q_values)
       td_targets = tf.stop_gradient(
-          self._reward_scale_factor * next_time_steps.reward[index] +
+          self._reward_scale_factor * next_time_steps.reward[:, index] +
           self._gamma * next_time_steps.discount * target_q_values)
 
       critic_net_input = (time_steps.observation, actions)
@@ -364,7 +363,7 @@ class DdpgAgent(tf_agent.TFAgent):
       return critic_loss
 
   """Nitty: edited for centralized training of critic"""
-  def actor_loss(self, time_steps, main_actions, weights=None, training=False):
+  def actor_loss(self, time_steps, total_actions, index, weights=None, training=False):
     """Computes the actor_loss for DDPG training.
 
     Args:
@@ -377,12 +376,23 @@ class DdpgAgent(tf_agent.TFAgent):
       actor_loss: A scalar actor loss.
     """
     with tf.name_scope('actor_loss'):
+      action_current_agent, _ = self._actor_network(time_steps.observation[index],
+                                       time_steps.step_type,
+                                       training=training)
+      total_actions = list(total_actions)
+      main_actions = []
+      for i, action in enumerate(total_actions):
+        if i == index:
+          main_actions.append(action_current_agent)
+        else:
+          main_actions.append(action)
+      main_actions = tuple(main_actions)
       with tf.GradientTape(watch_accessed_variables=False) as tape:
         tape.watch(main_actions)
         q_values, _ = self._critic_network((time_steps.observation, main_actions),
                                            time_steps.step_type,
-                                           training=False)
-        actions = tf.nest.flatten(main_actions)
+                                           training=training)
+        main_actions = tf.nest.flatten(main_actions[index])
 
       dqdas = tape.gradient([q_values], main_actions)
 

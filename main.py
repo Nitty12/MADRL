@@ -33,6 +33,8 @@ from tf_agents.environments import suite_gym
 
 # TODO why it is not reproducible even though np is seeded?
 np.random.seed(0)
+tf.random.set_seed(0)
+
 '''
 generation is -ve qty
 load is +ve qty
@@ -109,22 +111,22 @@ replay_buffer_data_spec = trajectory.from_transition(train_env.time_step_spec(),
 replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(data_spec=replay_buffer_data_spec,
                                                                batch_size=train_env.batch_size,
                                                                max_length=replay_buffer_capacity)
-train_step_counter = tf.Variable(0)
+train_step_counter = tf.Variable(0, trainable=False)
 
 batch_size = 8
 dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
 iterator = iter(dataset)
 
-replay_observer = [replay_buffer.add_batch]
 train_metrics = [tf_metrics.AverageReturnMetric()]
 
-for index, agent in enumerate(env.agents):
+agents = train_env.pyenv.envs[0].gym.agents
+for index, agent in enumerate(agents):
     agent.NN.initialize(train_env, train_step_counter, index)
 
 """This is the data collection policy"""
-collect_policySteps = [agent.NN.collect_policy.action for agent in env.agents]
+collect_policySteps = [agent.NN.collect_policy.action for agent in agents]
 """This is the evaluation policy"""
-eval_policySteps = [agent.NN.eval_policy.action for agent in env.agents]
+eval_policySteps = [agent.NN.eval_policy.action for agent in agents]
 
 
 def one_step(environment, policySteps):
@@ -148,14 +150,15 @@ def compute_avg_return(environment, policySteps, num_steps=10):
             total_return = next_time_step.reward
         else:
             total_return += next_time_step.reward
-    return total_return/num_steps
+    avg_return = total_return/num_steps
+    return avg_return.numpy()[0]
 
 
 def collect_step(environment, policySteps, buffer):
     time_step, total_agents_action, next_time_step = one_step(environment, policySteps)
     traj = trajectory.from_transition(time_step, total_agents_action, next_time_step, joint_action=True)
     buffer.add_batch(traj)
-
+    tf_metrics.AverageReturnMetric()
 
 def get_target_and_main_actions(experience):
     """get the actions from the target actor network and main actor network of all the agents"""
@@ -163,7 +166,7 @@ def get_target_and_main_actions(experience):
     total_agents_main_actions = []
     time_steps, policy_steps, next_time_steps = (
         trajectory.experience_to_transitions(experience, squeeze_time_dim=True))
-    for i, flexAgent in enumerate(env.agents):
+    for i, flexAgent in enumerate(agents):
         target_action, _ = flexAgent.NN.agent._target_actor_network(next_time_steps.observation[i],
                                                                      next_time_steps.step_type,
                                                                      training=False)
@@ -177,11 +180,11 @@ def get_target_and_main_actions(experience):
 
 
 # Evaluate the agent's policy once before training.
-avg_return = compute_avg_return(eval_env, eval_policySteps, num_steps=50)
+avg_return = compute_avg_return(eval_env, eval_policySteps, num_steps=10)
 returns = [avg_return]
 
 # initialize trainer
-for flexAgent in env.agents:
+for flexAgent in agents:
     # (Optional) Optimize by wrapping some of the code in a graph using TF function.
     flexAgent.NN.agent.train = common.function(flexAgent.NN.agent.train)
     # Reset the train step
@@ -190,9 +193,10 @@ for flexAgent in env.agents:
 # Training the agents
 num_iterations = 100
 collect_steps_per_iteration = 2
-log_interval = 5
+log_interval = 20
 eval_interval = 20
-for num_iter in range(num_iterations):
+time_step = train_env.reset()
+for num_iter in range(1, num_iterations+1):
     # Collect a few steps using collect_policy and save to the replay buffer.
     for _ in range(collect_steps_per_iteration):
         collect_step(train_env, collect_policySteps, replay_buffer)
@@ -202,17 +206,30 @@ for num_iter in range(num_iterations):
     time_steps, policy_steps, next_time_steps, total_agents_target_actions, total_agents_main_actions = \
         get_target_and_main_actions(experience)
 
-    for i, flexAgent in enumerate(env.agents):
+    train_step_counter.assign_add(1)
+
+    for i, flexAgent in enumerate(agents):
         train_loss = flexAgent.NN.agent.train(time_steps, policy_steps, next_time_steps,
                                               total_agents_target_actions,
                                               total_agents_main_actions,
                                               index=i).loss
+
         step = flexAgent.NN.agent.train_step_counter.numpy()
         if step % log_interval == 0:
             print('Agent ID = {0} step = {1}: loss = {2}'.format(flexAgent.id, step, train_loss))
-
+    if train_step_counter % log_interval == 0:
+        print("==============================================")
     if num_iter % eval_interval == 0:
         avg_return = compute_avg_return(eval_env, eval_policySteps, num_steps=1)
         print('step = {0}: Average Return = {1}'.format(num_iter, avg_return))
+        print("==============================================")
         returns.append(avg_return)
 
+"""Plot the returns"""
+steps = range(0, num_iterations + 1, eval_interval)
+idx = 0
+agent_returns = [ret[idx] for ret in returns]
+plt.plot(steps, agent_returns)
+plt.ylabel('Average Return - Agent {}'.format(idx))
+plt.xlabel('Step')
+plt.show()
