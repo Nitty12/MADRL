@@ -2,28 +2,13 @@ import numpy as np
 import tensorflow as tf
 import tf_agents
 from tf_agents.agents import DdpgAgent
-from tf_agents.drivers import dynamic_step_driver
-from tf_agents.environments import tf_py_environment
-from tf_agents.trajectories import trajectory
-from tf_agents.environments import wrappers
-from tf_agents.eval import metric_utils
-from tf_agents.metrics import tf_metrics
 from tf_agents.policies import random_tf_policy
-from tf_agents.replay_buffers import tf_uniform_replay_buffer
-from tf_agents.utils import common
-from tf_agents.environments import suite_gym
 
 
 class AgentNeuralNet:
     def __init__(self):
         # Hyperparameters
-        self.num_iterations = 50000
-        self.initial_collect_steps = 2000
-        self.collect_steps_per_iteration = 1
         self.learning_rate = 1e-5
-        self.log_interval = 500
-        self.num_eval_episodes = 2
-        self.eval_interval = 2000
         self.fc_layer_params_actor = (100,)
         self.fc_layer_params_critic_obs = (50,)
         self.fc_layer_params_critic_merged = (100,)
@@ -57,8 +42,6 @@ class AgentNeuralNet:
         # centralized critic
         """Flatten the observation and action tuple as the critic network only accepts single obs and act
             We need it to see the obs and act of all agents"""
-        # print(train_env.total_observation_spec())
-        # print(train_env.total_action_spec())
 
         CriticNetwork = tf_agents.agents.ddpg.critic_network.CriticNetwork(
             input_tensor_spec=(train_env.total_observation_spec(), train_env.total_action_spec()),
@@ -83,19 +66,3 @@ class AgentNeuralNet:
         self.random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
                                                              train_env.action_spec())
 
-    # for testing
-    def setBidLimits(self, sLow, sHigh, fLow, fHigh, pLow, pHigh):
-        self.lowSpotBidLimit = sLow
-        self.highSpotBidLimit = sHigh
-        self.lowFlexBidLimit = fLow
-        self.highFlexBidLimit = fHigh
-        self.lowPriceLimit = pLow
-        self.highPriceLimit = pHigh
-
-    # for testing
-    def action(self, obs):
-        spotBidMultiplier = np.random.uniform(self.lowSpotBidLimit, self.highSpotBidLimit, size=24)
-        flexBidMultiplier = np.random.uniform(self.lowFlexBidLimit, self.highFlexBidLimit, size=24)
-        flexBidPriceMultiplier = np.random.uniform(self.lowPriceLimit, self.highPriceLimit, size=24)
-
-        return np.concatenate((spotBidMultiplier, flexBidMultiplier, flexBidPriceMultiplier))

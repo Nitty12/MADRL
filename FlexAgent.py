@@ -80,10 +80,6 @@ class FlexAgent:
         self.rewardCount = 0.0
         self.spotState = True
 
-        # for testing
-        self.NN.setBidLimits(self.lowSpotBidLimit, self.highSpotBidLimit, self.lowFlexBidLimit, self.highFlexBidLimit,
-                             self.lowPriceLimit, self.highPriceLimit)
-
     def printInfo(self):
         print("Agent ID: {}\nLocation: {}\nMaximum Power: {}"
               .format(self.id, self.location, self.maxPower))

@@ -77,6 +77,8 @@ class BatStorage(FlexAgent):
             else:
                 return True, None
         elif status == 'before_flex':
+            """spotDispatchedQty: dispatched qty in spot market in this hour
+                self.energyTable.loc[index, status]: remaining energy before flex dispatch after the previous hour"""
             spotDispatchedQty = self.energyTable.loc[index, 'after_spot'] - self.energyTable.loc[index+1, 'after_spot']
             if spotDispatchedQty + self.energyTable.loc[index, status] + energy > self.maxCapacity:
                 return False, spotDispatchedQty + self.energyTable.loc[index, status] + energy - self.maxCapacity
@@ -204,6 +206,14 @@ class BatStorage(FlexAgent):
                 else:
                     # No change in energy
                     self.energyTable.loc[time+1, 'after_flex'] = self.energyTable.loc[time, 'after_flex']
+
+        """After flex market ends for a day, the final energy must be updated for all columns in energy table as it is 
+        the final realised energy after the day"""
+        nextDayFirstTime = (self.day + 1)*self.dailySpotTime
+        self.energyTable.loc[nextDayFirstTime, ['before_spot', 'after_spot', 'before_flex', 'after_flex']] = \
+            self.energyTable.loc[nextDayFirstTime, 'after_flex']
+        self.remEnergyBeforeSpot = self.energyTable.loc[nextDayFirstTime, 'after_flex']
+        self.remEnergyAfterSpot = self.energyTable.loc[nextDayFirstTime, 'after_flex']
 
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice)
 

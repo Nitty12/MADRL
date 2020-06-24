@@ -133,9 +133,14 @@ class HeatPump(FlexAgent):
             else:
                 return True, None
         elif status == 'before_flex':
-            spotDispatchedQty = self.energyTable.loc[index, 'after_spot'] - self.energyTable.loc[index+1, 'after_spot']
+            if self.spotBid.loc[index, 'dispatched']:
+                spotDispatchedQty = self.spotBid.loc[index, 'qty_bid']
+            else:
+                spotDispatchedQty = 0
+
             if spotDispatchedQty + self.energyTable.loc[index, status] + energy > self.maxStorageLevel:
-                return False, spotDispatchedQty + self.energyTable.loc[index, status] + energy - self.maxStorageLevel
+                return False, (spotDispatchedQty + self.energyTable.loc[index, status] +
+                               energy - self.maxStorageLevel)/self.COP
             else:
                 return True, None
 
@@ -168,6 +173,7 @@ class HeatPump(FlexAgent):
                 self.scheduledHeatLoad.loc[index, 'loaded'] = True
         else:
             # print("WARNING: Heat pump {0} cannot be loaded at index {1} {2}!".format(self.id, index, status))
+            # TODO what can be done here
             pass
 
     def spotMarketEnd(self):
@@ -254,24 +260,29 @@ class HeatPump(FlexAgent):
 
     def makeBid(self, dailyBid, status):
         for i, qty in zip(dailyBid['time'].values, dailyBid['qty_bid'].values):
-            """
-            checkLoading updates the energyTable with the load
-            """
-            self.checkLoading(status=status, index=i)
-            possible, constraintAmount = self.canStore(power=qty, time=self.timeInterval, status=status, index=i)
-            if possible:
-                self.store(power=qty, time=self.timeInterval, status=status, index=i+1)
-            else:
-                # reduce charge at least by constraintAmount
-                # just bid physically realisable amount
-                dailyBid.loc[i, 'qty_bid'] -= np.random.uniform(constraintAmount, qty)
-                # # bid physically unrealisable amount also
-                # self.spotBid.loc[i, 'qty_bid'] -= np.random.uniform(constraintAmount,
-                #                                                     self.maxPower-self.spotBid.loc[i, 'qty_bid'])
-                self.store(power=self.spotBid.loc[i, 'qty_bid'], time=self.timeInterval, status=status, index=i+1)
-                # TODO check other possible options here
 
-            assert -self.maxPower <= self.spotBid.loc[i, 'qty_bid'] <= self.maxPower, \
+            if qty > 0:
+                """
+                checkLoading updates the energyTable with the load
+                """
+                self.checkLoading(status=status, index=i)
+                possible, constraintAmount = self.canStore(power=qty, time=self.timeInterval, status=status, index=i)
+                if possible:
+                    self.store(power=qty, time=self.timeInterval, status=status, index=i+1)
+                else:
+                    # reduce charge at least by constraintAmount
+                    # just bid physically realisable amount
+                    dailyBid.loc[i, 'qty_bid'] -= np.random.uniform(constraintAmount, qty)
+                    # # bid physically unrealisable amount also
+                    # self.spotBid.loc[i, 'qty_bid'] -= np.random.uniform(constraintAmount,
+                    #                                                     self.maxPower-self.spotBid.loc[i, 'qty_bid'])
+                    self.store(power=dailyBid.loc[i, 'qty_bid'], time=self.timeInterval, status=status, index=i+1)
+                    # TODO check other possible options here
+            else:
+                # TODO what to test here?
+                pass
+
+            assert -self.maxPower <= dailyBid.loc[i, 'qty_bid'] <= self.maxPower, \
                 'Qty bid cannot be more than maxPower'
 
     def flexMarketEnd(self):
@@ -290,7 +301,13 @@ class HeatPump(FlexAgent):
                     self.energyTable.loc[time+1, 'after_flex'] = self.energyTable.loc[time, 'after_flex']
 
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice)
-
+        """After flex market ends for a day, the final energy must be updated for all columns in energy table as it is 
+        the final realised energy after the day"""
+        nextDayFirstTime = (self.day + 1)*self.dailySpotTime
+        self.energyTable.loc[nextDayFirstTime, ['before_spot', 'after_spot', 'before_flex', 'after_flex']] = \
+            self.energyTable.loc[nextDayFirstTime, 'after_flex']
+        self.storageLevelBeforeSpot = self.energyTable.loc[nextDayFirstTime, 'after_flex']
+        self.storageLevelAfterSpot= self.energyTable.loc[nextDayFirstTime, 'after_flex']
 
 
 
