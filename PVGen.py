@@ -7,9 +7,9 @@ from FlexAgent import FlexAgent
 
 
 class PVG(FlexAgent):
-    def __init__(self, id, location=[0, 0], maxPower = 0, marginalCost = 0, feedInPremium = 64):
+    def __init__(self, id, location=None, minPower = 0, maxPower = 0, voltageLevel= 0, marginalCost = 0, feedInPremium = 64):
 
-        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
+        super().__init__(id=id, location=location, minPower = minPower, maxPower=maxPower, marginalCost=marginalCost)
         self.type = "PV Generation"
         self.feedInPremium = feedInPremium
         """Assumption: the timeseries data contains -ve qty (generation)"""

@@ -14,7 +14,6 @@
 # limitations under the License.
 
 """A DDPG Agent.
-
 Implements the Deep Deterministic Policy Gradient (DDPG) algorithm from
 "Continuous control with deep reinforcement learning" - Lilicrap et al.
 """
@@ -70,7 +69,6 @@ class DdpgAgent(tf_agent.TFAgent):
                train_step_counter=None,
                name=None):
     """Creates a DDPG Agent.
-
     Args:
       time_step_spec: A `TimeStep` spec of the expected time_steps.
       action_spec: A nest of BoundedTensorSpec representing the actions.
@@ -91,11 +89,9 @@ class DdpgAgent(tf_agent.TFAgent):
         `target_update_period` train steps, the weights from `actor_network` are
         copied (possibly withsmoothing via `target_update_tau`) to `
         target_q_network`.
-
         If `target_actor_network` is not provided, it is created by making a
         copy of `actor_network`, which initializes a new network with the same
         structure and its own layers and weights.
-
         Performing a `Network.copy` does not work when the network instance
         already has trainable parameters (e.g., has already been built, or
         when the network is sharing layers with another).  In these cases, it is
@@ -198,11 +194,9 @@ class DdpgAgent(tf_agent.TFAgent):
 
   def _get_target_updater(self, tau=1.0, period=1):
     """Performs a soft update of the target network parameters.
-
     For each weight w_s in the original network, and its corresponding
     weight w_t in the target network, a soft update is:
     w_t = (1- tau) x w_t + tau x ws
-
     Args:
       tau: A float scalar in [0, 1]. Default `tau=1.0` means hard update.
       period: Step interval at which the target networks are updated.
@@ -305,7 +299,6 @@ class DdpgAgent(tf_agent.TFAgent):
                   weights=None,
                   training=False):
     """Computes the critic loss for DDPG training.
-
     Args:
       time_steps: A batch of timesteps.
       actions: A batch of actions.
@@ -365,7 +358,6 @@ class DdpgAgent(tf_agent.TFAgent):
   """Nitty: edited for centralized training of critic"""
   def actor_loss(self, time_steps, total_actions, index, weights=None, training=False):
     """Computes the actor_loss for DDPG training.
-
     Args:
       time_steps: A batch of timesteps.
       weights: Optional scalar or element-wise (per-batch-entry) importance

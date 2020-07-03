@@ -4,12 +4,13 @@ import pandas as pd
 
 
 class FlexAgent:
-    def __init__(self, id, location=[0, 0], maxPower = 0, marginalCost = 0,
+    def __init__(self, id, location=None, minPower = 0, maxPower = 0, marginalCost = 0,
                  spotTimePeriod = 8760, dailySpotTime = 24, flexTimePeriod = 8760, needCounterTrade = False,
                  discountFactor = 0.7, learningRate = 0.001):
         self.id = id
         self.type = "unknown"
-        self.location = location  # coordinates
+        self.location = location  #
+        self.minPower = minPower
         self.maxPower = maxPower
         self.marginalCost = marginalCost
         self.spotTimePeriod = spotTimePeriod

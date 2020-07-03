@@ -53,7 +53,6 @@ class TFAgent(tf.Module):
                enable_summaries=True,
                train_step_counter=None):
     """Meant to be called by subclass constructors.
-
     Args:
       time_step_spec: A nest of tf.TypeSpec representing the time_steps.
         Provided by the user.
@@ -78,20 +77,16 @@ class TFAgent(tf.Module):
       train_argspec: (Optional) Describes additional supported arguments
         to the `train` call.  This must be a `dict` mapping strings to nests
         of specs.  Overriding the `experience` arg is also supported.
-
         Some algorithms require additional arguments to the `train()` call, and
         while TF-Agents encourages most of these to be provided in the
         `policy_info` / `info` field of `experience`, sometimes the extra
         information doesn't fit well, i.e., when it doesn't come from the
         policy.
-
         **NOTE** kwargs will not have their outer dimensions validated.
         In particular, `train_sequence_length` is ignored for these inputs,
         and they may have any, or inconsistent, batch/time dimensions; only
         their inner shape dimensions are checked against `train_argspec`.
-
         Below is an example:
-
         ```python
         class MyAgent(TFAgent):
           def __init__(self, counterfactual_training, ...):
@@ -103,9 +98,7 @@ class TFAgent(tf.Module):
              super(...).__init__(
                ...
                train_argspec=train_argspec)
-
         my_agent = MyAgent(...)
-
         for ...:
           experience, counterfactual = next(experience_and_counterfactual_iter)
           loss_info = my_agent.train(experience, counterfactual=counterfactual)
@@ -120,7 +113,6 @@ class TFAgent(tf.Module):
         `summarize_grads_and_vars` properties.
       train_step_counter: An optional counter to increment every time the train
         op is run.  Defaults to the global_step.
-
     Raises:
       TypeError: If `train_argspec` is not a `dict`.
       ValueError: If `train_argspec` has the keys `experience` or `weights`.
@@ -187,10 +179,8 @@ class TFAgent(tf.Module):
 
   def initialize(self):
     """Initializes the agent.
-
     Returns:
       An operation that can be used to initialize the agent.
-
     Raises:
       RuntimeError: If the class was not initialized properly (`super.__init__`
         was not called).
@@ -247,10 +237,8 @@ class TFAgent(tf.Module):
 
   def _check_train_argspec(self, kwargs):
     """Check that kwargs passed to train match `self.train_argspec`.
-
     Args:
       kwargs: The `kwargs` passed to `train()`.
-
     Raises:
       AttributeError: If `kwargs` keyset doesn't match `train_argspec`.
       ValueError: If `kwargs` do not match the specs in `train_argspec`.
@@ -269,7 +257,6 @@ class TFAgent(tf.Module):
   # def train(self, experience, weights=None, **kwargs):
   def train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, index, weights=None, **kwargs):
     """Trains the agent.
-
     Args:
       experience: A batch of experience data in the form of a `Trajectory`. The
         structure of `experience` must match that of `self.collect_data_spec`.
@@ -281,7 +268,6 @@ class TFAgent(tf.Module):
         Weights are typically multiplied elementwise against the per-batch loss,
         but the implementation is up to the Agent.
       **kwargs: Any additional data as declared by `self.train_argspec`.
-
     Returns:
         A `LossInfo` loss tuple containing loss and info tensors.
         - In eager mode, the loss values are first calculated, then a train step
@@ -289,7 +275,6 @@ class TFAgent(tf.Module):
         - In graph mode, executing any or all of the loss tensors
           will first calculate the loss value(s), then perform a train step,
           and return the pre-train-step `LossInfo`.
-
     Raises:
       TypeError: If experience is not type `Trajectory`.  Or if experience
         does not match `self.collect_data_spec` structure types.
@@ -332,7 +317,6 @@ class TFAgent(tf.Module):
   @property
   def time_step_spec(self):
     """Describes the `TimeStep` tensors expected by the agent.
-
     Returns:
       A `TimeStep` namedtuple with `TensorSpec` objects instead of Tensors,
       which describe the shape, dtype and name of each tensor.
@@ -342,7 +326,6 @@ class TFAgent(tf.Module):
   @property
   def action_spec(self):
     """TensorSpec describing the action produced by the agent.
-
     Returns:
       An single BoundedTensorSpec, or a nested dict, list or tuple of
       `BoundedTensorSpec` objects, which describe the shape and
@@ -353,7 +336,6 @@ class TFAgent(tf.Module):
   @property
   def train_argspec(self):
     """TensorSpec describing extra supported `kwargs` to `train()`.
-
     Returns:
        A `dict` mapping kwarg strings to nests of `tf.TypeSpec` objects (or
        `None` if there is no `train_argspec`).
@@ -363,7 +345,6 @@ class TFAgent(tf.Module):
   @property
   def policy(self):
     """Return the current policy held by the agent.
-
     Returns:
       A `tf_policy.Base` object.
     """
@@ -372,7 +353,6 @@ class TFAgent(tf.Module):
   @property
   def collect_policy(self):
     """Return a policy that can be used to collect data from the environment.
-
     Returns:
       A `tf_policy.Base` object.
     """
@@ -381,7 +361,6 @@ class TFAgent(tf.Module):
   @property
   def collect_data_spec(self):
     """Returns a `Trajectory` spec, as expected by the `collect_policy`.
-
     Returns:
       A `Trajectory` spec.
     """
@@ -390,17 +369,13 @@ class TFAgent(tf.Module):
   @property
   def train_sequence_length(self):
     """The number of time steps needed in experience tensors passed to `train`.
-
     Train requires experience to be a `Trajectory` containing tensors shaped
     `[B, T, ...]`.  This argument describes the value of `T` required.
-
     For example, for non-RNN DQN training, `T=2` because DQN requires single
     transitions.
-
     If this value is `None`, then `train` can handle an unknown `T` (it can be
     determined at runtime from the data).  Most RNN-based agents fall into
     this category.
-
     Returns:
       The number of time steps needed in experience tensors passed to `train`.
       May be `None` to mean no constraint.
@@ -433,10 +408,8 @@ class TFAgent(tf.Module):
   # def _train(self, experience, weights):
   def _train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, index, weights):
     """Returns an op to train the agent.
-
     This method *must* increment self.train_step_counter exactly once.
     TODO(b/126271669): Consider automatically incrementing this
-
     Args:
       experience: A batch of experience data in the form of a `Trajectory`. The
         structure of `experience` must match that of `self.collect_data_spec`.
@@ -447,7 +420,6 @@ class TFAgent(tf.Module):
         containing weights to be used when calculating the total train loss.
         Weights are typically multiplied elementwise against the per-batch loss,
         but the implementation is up to the Agent.
-
     Returns:
         A `LossInfo` containing the loss *before* the training step is taken.
         In most cases, if `weights` is provided, the entries of this tuple will
