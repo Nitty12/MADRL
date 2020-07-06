@@ -11,9 +11,15 @@ class DSM(FlexAgent):
         super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
         self.type = "Demand Side Management"
         self.scheduledLoad = None
-
+        self.basePower = 0.2*self.maxPower
+        """spotBidMultiplier of DSM agent is used to redistribute the difference (P_total - P_base)
+            of each hour : To incorporate the constraints
+                                    if for each hour P_total > Pmax --> Negative rewards
+                                    if total of 24 hr P_total > scheduledLoad --> Negative rewards
+                                    if total of 24 hr P_total < scheduledLoad --> Negative rewards"""
+        self.penaltyViolation = -100
         self.lowSpotBidLimit = 0
-        self.highSpotBidLimit = 1
+        self.highSpotBidLimit = 2
         """in flex , can "sell" qty ie, to reduce the qty from the spot dispatched amount 
                     can buy qty to increase the qty from the spot dispatched amount"""
         self.lowFlexBidLimit = -1
@@ -25,51 +31,32 @@ class DSM(FlexAgent):
 
     def reset(self):
         super().reset()
-
-        # TODO remove the random initialization later
-        self.spotBidMultiplier = np.random.uniform(0, 1.2, size=self.dailySpotTime)
-        self.flexBidMultiplier = np.random.uniform(0, 1.2, size=self.dailySpotTime)
-        self.flexBidPriceMultiplier = np.random.uniform(1, 5, size=self.dailySpotTime)
-
         self.scheduledLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                                'load': np.random.uniform(0, self.maxPower, size=self.spotTimePeriod)})
+                                                'load': np.random.uniform(self.basePower, self.maxPower,
+                                                                          size=self.spotTimePeriod)})
+        """changing spot qty bid from maxPower to scheduled load"""
+        self.spotBid.loc[:, 'qty_bid'] = self.scheduledLoad.loc[:, 'load']
+        self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
+        self.flexBid.loc[:, 'qty_bid'] = self.spotBid.loc[:, 'qty_bid']
+        self.dailyFlexBid = self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)]
+        # TODO remove the random initialization later
+        self.spotBidMultiplier = np.random.uniform(0, 2, size=self.dailySpotTime)
+        self.flexBidMultiplier = np.random.uniform(0, 2, size=self.dailySpotTime)
+        self.flexBidPriceMultiplier = np.random.uniform(1, 5, size=self.dailySpotTime)
 
     def printInfo(self):
         super().printInfo()
         print("Type: {}".format(self.type))
 
-    def isAboveScheduled(self, time, power):
-        """
-        check whether the spot bid is above the scheduled load
-        If False, returns by how much amount
-        """
-        # if self.scheduledLoad.query('time == time')['load'] <= power:
-        if self.scheduledLoad.loc[time, 'load'] <= power:
-            return True, None
-        else:
-            return False, self.scheduledLoad.loc[time, 'load'] - power
-
     def makeSpotBid(self):
         # explicitly bounding low limit to 0 for spot
         # TODO check if this approach is ok
         self.boundSpotBidMultiplier(low=self.lowSpotBidLimit, high=self.highSpotBidLimit)
-        super().makeSpotBid()
-        """
-        Make sure that the spot bid is always above the scheduled load
-        """
-        for i, qty in  zip(self.dailySpotBid['time'].values, self.dailySpotBid['qty_bid'].values):
-            """DSM bids above scheduled load sop that in flex market, may be they can sell these in 
-            case of constraints in those periods"""
-            # TODO should it be always above schedule? do we need to include below schedule case also?
-            possible, constraintAmount = self.isAboveScheduled(time=i, power=qty)
-            if possible:
-                pass
-            else:
-                # increase bid at least by constraintAmount
-                self.spotBid.loc[i, 'qty_bid'] += np.random.uniform(constraintAmount,
-                                                                    self.maxPower-self.spotBid.loc[i, 'qty_bid'])
-            assert self.spotBid.loc[i, 'qty_bid'] <= self.maxPower, \
-                'Qty bid cannot be more than maxPower'
+        self.spotBidMultiplier = self.getSpotBidMultiplier()
+        total = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes), 'qty_bid']
+        self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes), 'qty_bid'] = \
+            self.basePower + (total - self.basePower)*self.spotBidMultiplier
+        self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
 
     def spotMarketEnd(self):
         spotDispatchedTimes, spotDispatchedQty = super().spotMarketEnd()
@@ -80,7 +67,15 @@ class DSM(FlexAgent):
         # Here negative of qty is used for reward because generation is negative qty
         self.dailyRewardTable.loc[time, 'reward_spot'] = self.dailySpotBid.loc[time, 'MCP'] * -qty
 
-        # TODO what about the times it is not dispatched? Penalize? but already rewards are negative!
+        """penalize for spot bid constraint violations"""
+        totalScheduledLoad = self.scheduledLoad.loc[self.scheduledLoad['time'].isin(self.dailyTimes), 'load'].sum()
+        totalSpotBid = self.dailySpotBid.loc[:, 'qty_bid'].sum()
+        if totalSpotBid > totalScheduledLoad:
+            self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += (totalSpotBid - totalScheduledLoad) * self.penaltyViolation
+        else:
+            self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += (totalScheduledLoad - totalSpotBid) * self.penaltyViolation
+        totalExcessBid = self.dailySpotBid.loc[self.dailySpotBid.loc[:, 'qty_bid'] > self.maxPower, 'qty_bid'].sum()
+        self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += totalExcessBid * self.penaltyViolation
 
         totalReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_spot'] = \
@@ -89,7 +84,22 @@ class DSM(FlexAgent):
 
     def makeFlexBid(self, reqdFlexTimes):
         self.boundFlexBidMultiplier(low=self.lowFlexBidLimit, high=self.highFlexBidLimit)
+        """initialize to the (current spot bid quantities - P_base) the qty that can be shifted"""
+        self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes), 'qty_bid'] = self.dailySpotBid.loc[:, 'qty_bid'] \
+                                                                                  - self.basePower
         super().makeFlexBid(reqdFlexTimes)
+        """if the flexbid is greater than (maxPower-spot dispatched qty), 
+        its not valid """
+        for i, qty in zip(self.dailyFlexBid['time'].values, self.dailyFlexBid['qty_bid'].values):
+            highLimit = self.maxPower
+            if self.dailySpotBid.loc[i, 'dispatched']:
+                highLimit = self.maxPower - self.dailySpotBid.loc[i, 'qty_bid']
+
+            if not qty <= highLimit:
+                # TODO bid is not valid, penalize the agent?
+                self.dailyFlexBid.loc[i, 'qty_bid'] = 0
+                self.dailyFlexBid.loc[i, 'price'] = 0
+        self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)] = self.dailyFlexBid
 
     def flexMarketEnd(self):
         flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice= super().flexMarketEnd()

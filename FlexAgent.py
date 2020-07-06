@@ -116,7 +116,7 @@ class FlexAgent:
 
     def makeFlexBid(self, reqdFlexTimes):
         if self.needCounterTrade:
-            # reduce the flex capacity for the spot dispatched times
+            # reduce the flex capacity for the spot dispatched times k
             # TODO adjust for total time
             spotDispatchedTimes = self.dailySpotBid.query('dispatched == True').loc[:, 'time']
             spotDispatchedQty = self.dailySpotBid.loc[spotDispatchedTimes, 'qty_bid']
@@ -130,21 +130,21 @@ class FlexAgent:
         self.dailyFlexBid = self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)]
         self.dailyFlexBid.loc[~self.dailyFlexBid['time'].isin(reqdFlexTimes), ['qty_bid', 'price']] = 0
 
-        if self.type in ["Demand Side Management", "E-vehicle VPP"]:
-            """if the flexbid is not between (-spot dispatched qty) and (maxPower-spot dispatched qty), 
-            its not valid """
-            for i, qty in zip(self.dailyFlexBid['time'].values, self.dailyFlexBid['qty_bid'].values):
-                lowLimit = 0
-                highLimit = self.maxPower
-                if self.dailySpotBid.loc[i, 'dispatched']:
-                    lowLimit = -self.dailySpotBid.loc[i, 'qty_bid']
-                    highLimit = self.maxPower - self.dailySpotBid.loc[i, 'qty_bid']
-
-                if not lowLimit <= qty <= highLimit:
-                    # TODO bid is not valid, penalize the agent?
-                    self.dailyFlexBid.loc[i, 'qty_bid'] = 0
-                    self.dailyFlexBid.loc[i, 'price'] = 0
-            self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)] = self.dailyFlexBid
+        # if self.type in ["Demand Side Management", "E-vehicle VPP"]:
+        #     """if the flexbid is not between (-spot dispatched qty) and (maxPower-spot dispatched qty),
+        #     its not valid """
+        #     for i, qty in zip(self.dailyFlexBid['time'].values, self.dailyFlexBid['qty_bid'].values):
+        #         lowLimit = 0
+        #         highLimit = self.maxPower
+        #         if self.dailySpotBid.loc[i, 'dispatched']:
+        #             lowLimit = -self.dailySpotBid.loc[i, 'qty_bid']
+        #             highLimit = self.maxPower - self.dailySpotBid.loc[i, 'qty_bid']
+        #
+        #         if not lowLimit <= qty <= highLimit:
+        #             # TODO bid is not valid, penalize the agent?
+        #             self.dailyFlexBid.loc[i, 'qty_bid'] = 0
+        #             self.dailyFlexBid.loc[i, 'price'] = 0
+        #     self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)] = self.dailyFlexBid
 
     def boundFlexBidMultiplier(self, low, high, priceLimit=None):
         """

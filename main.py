@@ -98,7 +98,6 @@ def one_step(environment, policySteps):
 
 def compute_avg_return(environment, policySteps, num_steps=10):
     total_return = None
-    time_step = environment.reset()
     for step in range(num_steps):
         _, _, next_time_step = one_step(environment, policySteps)
         if step == 0:
@@ -135,7 +134,15 @@ def get_target_and_main_actions(experience):
            tuple(total_agents_target_actions), tuple(total_agents_main_actions)
 
 
-agentsDict = agentsInit()
+# agentsDict = agentsInit()
+
+dsm1 = DSM(id=3, maxPower = 2, marginalCost = 20)
+sm = SpotMarket()
+sm.addParticipants([dsm1])
+grid = gridInit()
+dso = DSO(grid)
+dso.addflexAgents([dsm1])
+
 # grid = gridInit()
 # time = np.arange(24)
 # congestion = grid.checkCongestion(time)
@@ -146,89 +153,89 @@ agentsDict = agentsInit()
 # dso = DSO(grid)
 # dso.addflexAgents([ba1, hp1, dsm1, pv1, wg1])
 #
-# # load the train Gym environment
-# env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
-#                      gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
-# # evaluation environment
-# eval_py_env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
-#                              gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
-# env.reset()
-#
-# # convert to tf environment
-# train_env = tf_py_environment.TFPyEnvironment(env)
-# eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
-#
-# time_step = train_env.reset()
-#
-# replay_buffer = replayBufferInit(train_env)
-# train_step_counter = tf.Variable(0, trainable=False)
-# batch_size = 8
-# dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
-# iterator = iter(dataset)
-#
-# # initialize the ddpg agents
-# agents = train_env.pyenv.envs[0].gym.agents
-# for index, agent in enumerate(agents):
-#     agent.NN.initialize(train_env, train_step_counter, index)
-#
-# """This is the data collection policy"""
-# collect_policySteps = [agent.NN.collect_policy.action for agent in agents]
-# """This is the evaluation policy"""
-# eval_policySteps = [agent.NN.eval_policy.action for agent in agents]
-#
-# # Evaluate the agent's policy once before training.
-# avg_return = compute_avg_return(eval_env, eval_policySteps, num_steps=10)
-# returns = [avg_return]
-#
-# # initialize trainer
-# for flexAgent in agents:
-#     # (Optional) Optimize by wrapping some of the code in a graph using TF function.
-#     flexAgent.NN.agent.train = common.function(flexAgent.NN.agent.train)
-#     # Reset the train step
-#     flexAgent.NN.agent.train_step_counter.assign(0)
-#
-# # Training the agents
-# num_iterations = 100
-# collect_steps_per_iteration = 2
-# log_interval = 20
-# eval_interval = 20
-# time_step = train_env.reset()
-#
-# for num_iter in range(1, num_iterations+1):
-#     # Collect a few steps using collect_policy and save to the replay buffer.
-#     for _ in range(collect_steps_per_iteration):
-#         collect_step(train_env, collect_policySteps, replay_buffer)
-#
-#     # Sample a batch of data from the buffer and update the agent's network.
-#     experience, unused_info = next(iterator)
-#     time_steps, policy_steps, next_time_steps, total_agents_target_actions, total_agents_main_actions = \
-#         get_target_and_main_actions(experience)
-#
-#     train_step_counter.assign_add(1)
-#
-#     for i, flexAgent in enumerate(agents):
-#         train_loss = flexAgent.NN.agent.train(time_steps, policy_steps, next_time_steps,
-#                                               total_agents_target_actions,
-#                                               total_agents_main_actions,
-#                                               index=i).loss
-#         step = flexAgent.NN.agent.train_step_counter.numpy()
-#         if step % log_interval == 0:
-#             print('Agent ID = {0} step = {1}: loss = {2}'.format(flexAgent.id, step, train_loss))
-#
-#     if train_step_counter % log_interval == 0:
-#         print("=====================================================================================")
-#
-#     if num_iter % eval_interval == 0:
-#         avg_return = compute_avg_return(eval_env, eval_policySteps, num_steps=1)
-#         print('step = {0}: Average Return = {1}'.format(num_iter, avg_return))
-#         print("=====================================================================================")
-#         returns.append(avg_return)
-#
-# """Plot the returns"""
-# steps = range(0, num_iterations + 1, eval_interval)
-# idx = 1
-# agent_returns = [ret[idx] for ret in returns]
-# plt.plot(steps, agent_returns)
-# plt.ylabel('Average Return - Agent {}'.format(idx))
-# plt.xlabel('Step')
-# plt.show()
+# load the train Gym environment
+env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
+                     gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
+# evaluation environment
+eval_py_env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
+                             gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
+env.reset()
+
+# convert to tf environment
+train_env = tf_py_environment.TFPyEnvironment(env)
+eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
+
+time_step = train_env.reset()
+
+replay_buffer = replayBufferInit(train_env)
+train_step_counter = tf.Variable(0, trainable=False)
+batch_size = 8
+dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
+iterator = iter(dataset)
+
+# initialize the ddpg agents
+agents = train_env.pyenv.envs[0].gym.agents
+for index, agent in enumerate(agents):
+    agent.NN.initialize(train_env, train_step_counter, index)
+
+"""This is the data collection policy"""
+collect_policySteps = [agent.NN.collect_policy.action for agent in agents]
+"""This is the evaluation policy"""
+eval_policySteps = [agent.NN.eval_policy.action for agent in agents]
+
+# Evaluate the agent's policy once before training.
+avg_return = compute_avg_return(eval_env, eval_policySteps, num_steps=10)
+returns = [avg_return]
+
+# initialize trainer
+for flexAgent in agents:
+    # (Optional) Optimize by wrapping some of the code in a graph using TF function.
+    flexAgent.NN.agent.train = common.function(flexAgent.NN.agent.train)
+    # Reset the train step
+    flexAgent.NN.agent.train_step_counter.assign(0)
+
+# Training the agents
+num_iterations = 100
+collect_steps_per_iteration = 2
+log_interval = 20
+eval_interval = 20
+time_step = train_env.reset()
+
+for num_iter in range(1, num_iterations+1):
+    # Collect a few steps using collect_policy and save to the replay buffer.
+    for _ in range(collect_steps_per_iteration):
+        collect_step(train_env, collect_policySteps, replay_buffer)
+
+    # Sample a batch of data from the buffer and update the agent's network.
+    experience, unused_info = next(iterator)
+    time_steps, policy_steps, next_time_steps, total_agents_target_actions, total_agents_main_actions = \
+        get_target_and_main_actions(experience)
+
+    train_step_counter.assign_add(1)
+
+    for i, flexAgent in enumerate(agents):
+        train_loss = flexAgent.NN.agent.train(time_steps, policy_steps, next_time_steps,
+                                              total_agents_target_actions,
+                                              total_agents_main_actions,
+                                              index=i).loss
+        step = flexAgent.NN.agent.train_step_counter.numpy()
+        if step % log_interval == 0:
+            print('Agent ID = {0} step = {1}: loss = {2}'.format(flexAgent.id, step, train_loss))
+
+    if train_step_counter % log_interval == 0:
+        print("=====================================================================================")
+
+    if num_iter % eval_interval == 0:
+        avg_return = compute_avg_return(eval_env, eval_policySteps, num_steps=2)
+        print('step = {0}: Average Return = {1}'.format(num_iter, avg_return))
+        print("=====================================================================================")
+        returns.append(avg_return)
+
+"""Plot the returns"""
+steps = range(0, num_iterations + 1, eval_interval)
+idx = 0
+agent_returns = [ret[idx] for ret in returns]
+plt.plot(steps, agent_returns)
+plt.ylabel('Average Return - Agent {}'.format(idx))
+plt.xlabel('Step')
+plt.show()
