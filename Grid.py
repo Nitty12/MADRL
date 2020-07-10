@@ -58,12 +58,11 @@ class Grid:
 
     def checkCongestion(self, time):
         """for testing"""
-        # self.congestedLines.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numLines))
-        # self.congestedNodes.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numNodes))
-        # for col_name in self.congestedLines.loc[time, :]:
-        #     self.status.loc[time, 'congestion'] |= self.congestedLines[col_name]
-        # return np.any(self.status.loc[time, 'congestion'].values)
-        return True
+        self.congestedLines.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numLines))
+        self.congestedNodes.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numNodes))
+        for col_name in self.congestedLines:
+            self.status.loc[time, 'congestion'] |= self.congestedLines[time, col_name]
+        return np.any(self.status.loc[time, 'congestion'].values)
 
     def loadFlowApprox(self):
         # TODO set values in congestedLines and congestedNodes

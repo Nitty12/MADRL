@@ -15,6 +15,7 @@ class FlexMarket:
         self.dailyTimes = np.arange(self.day * self.dailyFlexTime, (self.day + 1) * self.dailyFlexTime)
 
     def getCongestionStatus(self, grid):
+        # TODO check the congestion efficiently
         status = grid.checkCongestion(self.dailyTimes)
         # dailyGridStatus = grid.status.loc[grid.status['time'].isin(self.dailyTimes)]
         # status = np.any(dailyGridStatus.loc[:, 'congestion'])

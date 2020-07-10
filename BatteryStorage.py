@@ -4,10 +4,10 @@ from FlexAgent import FlexAgent
 
 
 class BatStorage(FlexAgent):
-    def __init__(self, id, location=[0, 0], maxPower=0, marginalCost=0,
+    def __init__(self, id, location=[0, 0], minPower = 0, maxPower = 0, voltageLevel= 0, marginalCost=0,
                  maxCapacity=0, efficiency=1.0, SOC=1.0, minSOC=0.2):
 
-        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
+        super().__init__(id=id, location=location, minPower = minPower, maxPower=maxPower, marginalCost=marginalCost)
         self.type = "Battery Storage"
         self.maxCapacity = maxCapacity  # capacity in MWh
         """
@@ -236,7 +236,8 @@ class BatStorage(FlexAgent):
                     # reduce discharge at least by constraintAmount
                     dailyBid.loc[i, 'qty_bid'] += np.random.uniform(constraintAmount, self.maxPower)
                     self.changeSOC(dailyBid.loc[i, 'qty_bid'], self.timeInterval, status, i+1)
-                    # TODO check other possible options here
+                    # TODO check other possible options here, get rid of random addition
+                    # dailyBid.loc[i, 'qty_bid'] = 0
 
             elif qty > 0:
                 # power intake from grid - consumer
@@ -249,6 +250,8 @@ class BatStorage(FlexAgent):
                     # reduce charge at least by constraintAmount
                     dailyBid.loc[i, 'qty_bid'] -= np.random.uniform(constraintAmount, self.maxPower)
                     self.changeSOC(dailyBid.loc[i, 'qty_bid'], self.timeInterval, status, i+1)
+                    # TODO check other possible options here, get rid of random addition
+                    # dailyBid.loc[i, 'qty_bid'] = 0
 
             assert -self.maxPower <= dailyBid.loc[i, 'qty_bid'] <= self.maxPower, \
                 'Qty bid cannot be more than maxPower'

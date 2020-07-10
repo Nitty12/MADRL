@@ -54,15 +54,26 @@ def agentsInit():
             biomass.append(name)
 
     agentsDict = {}
-    for name in PV[:1]:
-        details = data.loc[data['Name'] == name]
-        loc = details['Location'].values[0]
-        voltage_level = details['Un_kV'].values[0]
-        min_power = details['P_min_MW'].values[0]
-        max_power = details['P_max_MW'].values[0]
+    for name in PV[:2]:
+        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel= voltage_level, marginalCost=0)
+                               voltageLevel=voltage_level, marginalCost=0)
+
+    for name in homeStorage[:2]:
+        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+        agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
+                                      voltageLevel=voltage_level, marginalCost=0)
     return agentsDict
+
+
+def getAgentDetails(data, name):
+    details = data.loc[data['Name'] == name]
+    loc = details['Location'].values[0]
+    voltage_level = details['Un_kV'].values[0]
+    min_power = details['P_min_MW'].values[0]
+    max_power = details['P_max_MW'].values[0]
+    return loc, voltage_level, min_power, max_power
+
 
 def gridInit():
     grid = Grid()
@@ -104,7 +115,7 @@ def compute_avg_return(environment, policySteps, num_steps=10):
             total_return = next_time_step.reward
         else:
             total_return += next_time_step.reward
-    avg_return = total_return/num_steps
+    avg_return = total_return / num_steps
     return avg_return.numpy()[0]
 
 
@@ -123,36 +134,27 @@ def get_target_and_main_actions(experience):
         trajectory.experience_to_transitions(experience, squeeze_time_dim=True))
     for i, flexAgent in enumerate(agents):
         target_action, _ = flexAgent.NN.agent._target_actor_network(next_time_steps.observation[i],
-                                                                     next_time_steps.step_type,
-                                                                     training=False)
+                                                                    next_time_steps.step_type,
+                                                                    training=False)
         main_action, _ = flexAgent.NN.agent._actor_network(time_steps.observation[i],
-                                                       time_steps.step_type,
-                                                       training=True)
+                                                           time_steps.step_type,
+                                                           training=True)
         total_agents_target_actions.append(target_action)
         total_agents_main_actions.append(main_action)
     return time_steps, policy_steps, next_time_steps, \
            tuple(total_agents_target_actions), tuple(total_agents_main_actions)
 
 
-# agentsDict = agentsInit()
-
-dsm1 = DSM(id=3, maxPower = 2, marginalCost = 20)
-sm = SpotMarket()
-sm.addParticipants([dsm1])
+agentsDict = agentsInit()
 grid = gridInit()
-dso = DSO(grid)
-dso.addflexAgents([dsm1])
 
-# grid = gridInit()
-# time = np.arange(24)
-# congestion = grid.checkCongestion(time)
-#
-# sm = SpotMarket()
-# sm.addParticipants([ba1, hp1, dsm1, pv1, wg1])
-#
-# dso = DSO(grid)
-# dso.addflexAgents([ba1, hp1, dsm1, pv1, wg1])
-#
+sm = SpotMarket()
+agentsList = [obj for name, obj in agentsDict.items()]
+sm.addParticipants(agentsList)
+
+dso = DSO(grid)
+dso.addflexAgents(agentsList)
+
 # load the train Gym environment
 env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
                      gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
@@ -201,7 +203,7 @@ log_interval = 20
 eval_interval = 20
 time_step = train_env.reset()
 
-for num_iter in range(1, num_iterations+1):
+for num_iter in range(1, num_iterations + 1):
     # Collect a few steps using collect_policy and save to the replay buffer.
     for _ in range(collect_steps_per_iteration):
         collect_step(train_env, collect_policySteps, replay_buffer)
