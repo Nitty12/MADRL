@@ -54,7 +54,7 @@ class FlexAgent:
         self.highFlexBidLimit = 0
         self.lowPriceLimit = 1
         self.highPriceLimit = 5
-
+        self.penaltyViolation = -100
         self.spotState = None
 
     def reset(self):
@@ -181,8 +181,10 @@ class FlexAgent:
     def spotMarketReward(self, *args, **kwargs):
         pass
 
-    def flexMarketReward(self, time, qty, price):
+    def flexMarketReward(self, time, qty, price, penalizeTimes=None):
         # TODO check this for PV and wind
+        if penalizeTimes is not None:
+            self.dailyRewardTable.loc[penalizeTimes, 'reward_flex'] = self.penaltyViolation
         # Here negative of qty is used for reward because generation is negative qty
         self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
         totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()

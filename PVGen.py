@@ -23,8 +23,8 @@ class PVG(FlexAgent):
         self.importTimeseries()
 
         # TODO remove the random initialization later
-        self.spotBidMultiplier = np.random.uniform(0, 1.2, size=self.dailySpotTime)
-        self.flexBidMultiplier = np.random.uniform(0, 1.2, size=self.dailySpotTime)
+        self.spotBidMultiplier = np.random.uniform(0, 1, size=self.dailySpotTime)
+        self.flexBidMultiplier = np.random.uniform(0, 1, size=self.dailySpotTime)
         self.flexBidPriceMultiplier = np.random.uniform(0, 1, size=self.dailySpotTime)
 
         self.flexBid.loc[:, 'price'] = np.full(self.flexTimePeriod, self.feedInPremium, dtype=float)

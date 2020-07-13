@@ -40,8 +40,8 @@ class BatStorage(FlexAgent):
         self.SOC = 1.0
 
         # TODO remove the random initialization later
-        self.spotBidMultiplier = np.random.uniform(-1.2, 1.2, size=self.dailySpotTime)
-        self.flexBidMultiplier = np.random.uniform(-1.2, 1.2, size=self.dailySpotTime)
+        self.spotBidMultiplier = np.random.uniform(-1, 1, size=self.dailySpotTime)
+        self.flexBidMultiplier = np.random.uniform(-1, 1, size=self.dailySpotTime)
         self.flexBidPriceMultiplier = np.random.uniform(1, 5, size=self.dailySpotTime)
 
         self.energyTable = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),

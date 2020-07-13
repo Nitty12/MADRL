@@ -11,29 +11,30 @@ class DSM(FlexAgent):
         super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
         self.type = "Demand Side Management"
         self.scheduledLoad = None
-        self.basePower = 0.2*self.maxPower
+        # TODO baseLoad can be time dependent
+        # self.baseLoad = 0.2*self.maxPower
+        self.baseLoad = None
         """spotBidMultiplier of DSM agent is used to redistribute the difference (P_total - P_base)
             of each hour : To incorporate the constraints
                                     if for each hour P_total > Pmax --> Negative rewards
                                     if total of 24 hr P_total > scheduledLoad --> Negative rewards
                                     if total of 24 hr P_total < scheduledLoad --> Negative rewards"""
-        self.penaltyViolation = -100
         self.lowSpotBidLimit = 0
         self.highSpotBidLimit = 2
         """in flex , can "sell" qty ie, to reduce the qty from the spot dispatched amount 
                     can buy qty to increase the qty from the spot dispatched amount"""
         self.lowFlexBidLimit = -1
         self.highFlexBidLimit = 1
-
-        # TODO define a max and min loading timeseries for using flexibility
+        """if status is True, the time is non flexible time"""
+        self.nonFlexibleTimes = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
+                                                   'status': np.full(self.spotTimePeriod, False)})
+        # TODO initialize the non available times
 
         self.reset()
 
     def reset(self):
         super().reset()
-        self.scheduledLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                                'load': np.random.uniform(self.basePower, self.maxPower,
-                                                                          size=self.spotTimePeriod)})
+        self.importTimeseries()
         """changing spot qty bid from maxPower to scheduled load"""
         self.spotBid.loc[:, 'qty_bid'] = self.scheduledLoad.loc[:, 'load']
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
@@ -48,15 +49,32 @@ class DSM(FlexAgent):
         super().printInfo()
         print("Type: {}".format(self.type))
 
+    def importTimeseries(self):
+        # get the timeseries data
+        path = ''
+        ts = pd.read_csv(path)
+        self.scheduledLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
+                                                'load': np.full(self.spotTimePeriod, 0)})
+        # TODO initialize the timeseries into scheduledLoad
+
+        self.baseLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
+                                           'load': 0.2*self.scheduledLoad.loc['load']})
+
     def makeSpotBid(self):
-        # explicitly bounding low limit to 0 for spot
         # TODO check if this approach is ok
         self.boundSpotBidMultiplier(low=self.lowSpotBidLimit, high=self.highSpotBidLimit)
         self.spotBidMultiplier = self.getSpotBidMultiplier()
-        total = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes), 'qty_bid']
+        dailyTotalLoad = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes), 'qty_bid']
+        dailyBaseLoad = self.baseLoad.loc[self.baseLoad['time'].isin(self.dailyTimes), 'load']
+        dailyNonFlexTimes = self.nonFlexibleTimes.loc[self.nonFlexibleTimes['time'].isin(self.dailyTimes), 'status']
+        """modifies the above baseLoad load in spot market to optimize with the prices
+            also taking care of the nonFlexibleTimes"""
         self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes), 'qty_bid'] = \
-            self.basePower + (total - self.basePower)*self.spotBidMultiplier
+            dailyBaseLoad + (dailyTotalLoad - dailyBaseLoad)*self.spotBidMultiplier
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
+        # TODO is this approach or giving high penalty for qty changed in nonFlexTimes better?
+        self.dailySpotBid.loc[dailyNonFlexTimes, 'qty_bid'] = self.scheduledLoad.loc[self.scheduledLoad.isin
+                                                                                     (self.dailyTimes), 'load']
 
     def spotMarketEnd(self):
         spotDispatchedTimes, spotDispatchedQty = super().spotMarketEnd()
@@ -71,9 +89,11 @@ class DSM(FlexAgent):
         totalScheduledLoad = self.scheduledLoad.loc[self.scheduledLoad['time'].isin(self.dailyTimes), 'load'].sum()
         totalSpotBid = self.dailySpotBid.loc[:, 'qty_bid'].sum()
         if totalSpotBid > totalScheduledLoad:
-            self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += (totalSpotBid - totalScheduledLoad) * self.penaltyViolation
+            self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += (totalSpotBid - totalScheduledLoad) \
+                                                                            * self.penaltyViolation
         else:
-            self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += (totalScheduledLoad - totalSpotBid) * self.penaltyViolation
+            self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += (totalScheduledLoad - totalSpotBid) \
+                                                                            * self.penaltyViolation
         totalExcessBid = self.dailySpotBid.loc[self.dailySpotBid.loc[:, 'qty_bid'] > self.maxPower, 'qty_bid'].sum()
         self.dailyRewardTable.loc[self.dailyTimes[0], 'reward_spot'] += totalExcessBid * self.penaltyViolation
 
@@ -85,8 +105,9 @@ class DSM(FlexAgent):
     def makeFlexBid(self, reqdFlexTimes):
         self.boundFlexBidMultiplier(low=self.lowFlexBidLimit, high=self.highFlexBidLimit)
         """initialize to the (current spot bid quantities - P_base) the qty that can be shifted"""
+        dailyBaseLoad = self.baseLoad.loc[self.baseLoad['time'].isin(self.dailyTimes), 'load']
         self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes), 'qty_bid'] = self.dailySpotBid.loc[:, 'qty_bid'] \
-                                                                                  - self.basePower
+                                                                                  - dailyBaseLoad
         super().makeFlexBid(reqdFlexTimes)
         """if the flexbid is greater than (maxPower-spot dispatched qty), 
         its not valid """

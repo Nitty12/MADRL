@@ -42,6 +42,9 @@ def agentsInit():
     PV = []
     wind = []
     homeStorage = []
+    DSM =[]
+    EV = []
+    heatPump = []
     biomass = []
     for name in data['Name']:
         if name.endswith('_solar') or name.endswith('_nsPVErsatzeinsp'):
