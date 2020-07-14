@@ -74,3 +74,11 @@ class PVG(FlexAgent):
     def flexMarketEnd(self):
         flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice= super().flexMarketEnd()
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice)
+
+    def flexMarketReward(self, time, qty, price):
+        # Here negative of qty is used for reward because generation is negative qty
+        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
+        totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
+        self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
+            = self.dailyRewardTable.loc[:, 'reward_flex']
+        self.updateReward(totalReward)

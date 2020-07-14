@@ -142,7 +142,7 @@ class BatStorage(FlexAgent):
                 self.energyTable.loc[time, 'after_spot'] = self.remEnergyAfterSpot
 
             if time in spotDispatchedTimes:
-                dispatchedEnergy = spotDispatchedQty.loc[time] * self.timeInterval
+                dispatchedEnergy = spotDispatchedQty.loc[time] * self.spotTimeInterval
             else:
                 dispatchedEnergy = 0.0
             """
@@ -217,6 +217,14 @@ class BatStorage(FlexAgent):
 
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice)
 
+    def flexMarketReward(self, time, qty, price):
+        # Here negative of qty is used for reward because generation is negative qty
+        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
+        totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
+        self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
+            = self.dailyRewardTable.loc[:, 'reward_flex']
+        self.updateReward(totalReward)
+
     def makeBid(self, dailyBid, status):
         for i, qty in zip(dailyBid['time'].values, dailyBid['qty_bid'].values):
             """
@@ -228,28 +236,28 @@ class BatStorage(FlexAgent):
             if qty <= 0:
                 # power output to grid - generator
                 # constraintAmount is positive
-                possible, constraintAmount = self.canDischarge(dischargePower=qty, dischargeTime=self.timeInterval,
+                possible, constraintAmount = self.canDischarge(dischargePower=qty, dischargeTime=self.spotTimeInterval,
                                                                status=status, index=i)
                 if possible:
-                    self.changeSOC(qty, self.timeInterval, status, i+1)
+                    self.changeSOC(qty, self.spotTimeInterval, status, i+1)
                 else:
                     # reduce discharge at least by constraintAmount
                     dailyBid.loc[i, 'qty_bid'] += np.random.uniform(constraintAmount, self.maxPower)
-                    self.changeSOC(dailyBid.loc[i, 'qty_bid'], self.timeInterval, status, i+1)
+                    self.changeSOC(dailyBid.loc[i, 'qty_bid'], self.spotTimeInterval, status, i+1)
                     # TODO check other possible options here, get rid of random addition
                     # dailyBid.loc[i, 'qty_bid'] = 0
 
             elif qty > 0:
                 # power intake from grid - consumer
                 # constraintAmount is positive
-                possible, constraintAmount = self.canCharge(chargePower=qty, chargeTime=self.timeInterval,
+                possible, constraintAmount = self.canCharge(chargePower=qty, chargeTime=self.spotTimeInterval,
                                                             status=status, index=i)
                 if possible:
-                    self.changeSOC(qty, self.timeInterval, status, i+1)
+                    self.changeSOC(qty, self.spotTimeInterval, status, i+1)
                 else:
                     # reduce charge at least by constraintAmount
                     dailyBid.loc[i, 'qty_bid'] -= np.random.uniform(constraintAmount, self.maxPower)
-                    self.changeSOC(dailyBid.loc[i, 'qty_bid'], self.timeInterval, status, i+1)
+                    self.changeSOC(dailyBid.loc[i, 'qty_bid'], self.spotTimeInterval, status, i+1)
                     # TODO check other possible options here, get rid of random addition
                     # dailyBid.loc[i, 'qty_bid'] = 0
 

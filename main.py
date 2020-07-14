@@ -39,13 +39,17 @@ def agentsInit():
     data.columns = ['Name', 'Location', 'Un_kV', 'P_min_MW', 'P_max_MW']
     data.reset_index(inplace=True, drop=True)
     data[['Un_kV', 'P_min_MW', 'P_max_MW']] = data[['Un_kV', 'P_min_MW', 'P_max_MW']].apply(pd.to_numeric)
+
+    loadingSeriesHP = getHPSeries()
+    capacitySeriesEV, absenceSeriesEV = getEVSeries()
+    """contains names of the respective agents"""
     PV = []
     wind = []
     homeStorage = []
     DSM =[]
-    EV = []
-    heatPump = []
     biomass = []
+    heatPump = list(loadingSeriesHP)
+    EV = list(capacitySeriesEV)
     for name in data['Name']:
         if name.endswith('_solar') or name.endswith('_nsPVErsatzeinsp'):
             PV.append(name)
@@ -57,17 +61,53 @@ def agentsInit():
             biomass.append(name)
 
     agentsDict = {}
-    for name in PV[:2]:
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0)
+    # for name in PV[:2]:
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                            voltageLevel=voltage_level, marginalCost=0)
+    # for name in homeStorage[:2]:
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                                   voltageLevel=voltage_level, marginalCost=0)
+    for name in EV[:2]:
+        agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, name],
+                                    absenceTimes=absenceSeriesEV.loc[:, name])
+    for name in heatPump[:2]:
+        agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, name].max(),5),
+                                    maxStorageLevel=10*round(loadingSeriesHP.loc[:, name].max(),5),
+                                    scheduledLoad=loadingSeriesHP.loc[:, name])
 
-    for name in homeStorage[:2]:
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                                      voltageLevel=voltage_level, marginalCost=0)
     return agentsDict
 
+def getEVSeries():
+    """EV capacity timeseries"""
+    path = os.getcwd()
+    datapath = os.path.join(path, "../inputs/test_EMob_Zeitreihe_cap.csv")
+    capacitySeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                 encoding='unicode_escape')
+    capacitySeries.drop('0', axis=1, inplace=True)
+    capacitySeries = capacitySeries.apply(pd.to_numeric)
+
+    """EV absence timeseries"""
+    datapath = os.path.join(path, "../inputs/test_EMob_Zeitreihe_ab.csv")
+    absenceSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                 encoding='unicode_escape')
+    absenceSeries.drop('0', axis=1, inplace=True)
+    absenceSeries = absenceSeries.apply(pd.to_numeric)
+    return capacitySeries, absenceSeries
+
+def getHPSeries():
+    """Heat pump loading timeseries"""
+    path = os.getcwd()
+    datapath = os.path.join(path, "../inputs/WP_Zeitreihe_nnf.csv")
+    loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                 encoding='unicode_escape')
+    """cleaning the dataframe"""
+    loadingSeries.drop('NNF', axis=1, inplace=True)
+    loadingSeries.drop(loadingSeries.index[0], inplace=True)
+    loadingSeries.drop(loadingSeries.index[8760], inplace=True)
+    loadingSeries = loadingSeries.apply(pd.to_numeric)
+    return loadingSeries
 
 def getAgentDetails(data, name):
     details = data.loc[data['Name'] == name]
@@ -244,3 +284,5 @@ plt.plot(steps, agent_returns)
 plt.ylabel('Average Return - Agent {}'.format(idx))
 plt.xlabel('Step')
 plt.show()
+
+# TODO change the yearly spotbids and flexbids to daily

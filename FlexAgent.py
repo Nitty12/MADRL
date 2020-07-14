@@ -5,7 +5,7 @@ import pandas as pd
 
 class FlexAgent:
     def __init__(self, id, location=None, minPower = 0, maxPower = 0, marginalCost = 0,
-                 spotTimePeriod = 8760, dailySpotTime = 24, flexTimePeriod = 8760, needCounterTrade = False,
+                 spotTimePeriod = 8760, dailySpotTime = 24, flexTimePeriod = 0, needCounterTrade = False,
                  discountFactor = 0.7, learningRate = 0.001):
         self.id = id
         self.type = "unknown"
@@ -17,8 +17,10 @@ class FlexAgent:
         self.dailySpotTime = dailySpotTime
         self.day = None
         self.dailyTimes = None
-        self.flexTimePeriod = flexTimePeriod
-        self.timeInterval = 1  # in hours
+        self.dailyFlexTime = 96
+        self.flexTimePeriod = 8760*4
+        self.spotTimeInterval = 1  # in hours
+        self.flexTimeInterval = 0.25  # in hours
         self.needCounterTrade = needCounterTrade  # Is counter trading responsibility of FlexAgent?
         self.spotBid = None
         self.dailySpotBid = None
@@ -181,16 +183,8 @@ class FlexAgent:
     def spotMarketReward(self, *args, **kwargs):
         pass
 
-    def flexMarketReward(self, time, qty, price, penalizeTimes=None):
-        # TODO check this for PV and wind
-        if penalizeTimes is not None:
-            self.dailyRewardTable.loc[penalizeTimes, 'reward_flex'] = self.penaltyViolation
-        # Here negative of qty is used for reward because generation is negative qty
-        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
-        totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
-        self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
-            = self.dailyRewardTable.loc[:, 'reward_flex']
-        self.updateReward(totalReward)
+    def flexMarketReward(self,  *args, **kwargs):
+        pass
 
     def updateReward(self, reward):
         self.rewardCount += reward
@@ -225,6 +219,7 @@ class FlexAgent:
                 hourly dispatched power of the agent in 't-1' Flex market,
                 spot or flex state
         """
+        # TODO add reqd flex times?
         if self.day == 0:
             MCP = np.random.randint(15, 30, size=24)
             forecast = np.full(self.dailySpotTime, 0)
