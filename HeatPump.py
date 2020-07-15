@@ -30,8 +30,8 @@ class HeatPump(FlexAgent):
                                                 'load': scheduledLoad,
                                                 'loaded': np.full(self.spotTimePeriod, False)})
         self.energyTable = None
-        self.spotChangedEnergy = None
-        self.flexChangedEnergy = None
+        self.spotChangedEnergy = 0
+        self.flexChangedEnergy = 0
 
         """in flex , can "sell" qty ie, to reduce the qty from the spot dispatched amount 
                     can buy qty to increase the qty from the spot dispatched amount"""
@@ -86,8 +86,8 @@ class HeatPump(FlexAgent):
         elif status == 'before_flex':
             """check whether additional this energy can be stored
                 calculate how much energy was stored in this time in spot and update storageLevelBeforeFlex"""
-            if self.storageLevelBeforeFlex + self.spotChangedEnergy > self.maxStorageLevel:
-                return False, self.storageLevelBeforeFlex + self.spotChangedEnergy - self.maxStorageLevel
+            if self.storageLevelBeforeFlex + self.spotChangedEnergy + energy > self.maxStorageLevel:
+                return False, self.storageLevelBeforeFlex + self.spotChangedEnergy + energy - self.maxStorageLevel
             else:
                 return True, None
         elif status == 'after_flex':
@@ -102,7 +102,7 @@ class HeatPump(FlexAgent):
             self.storageLevelAfterSpot += energy
             self.updateEnergyTable(index, status, self.storageLevelAfterSpot)
         elif status == 'before_flex':
-            self.storageLevelBeforeFlex = self.storageLevelBeforeFlex + self.spotChangedEnergy
+            self.storageLevelBeforeFlex = self.storageLevelBeforeFlex + self.spotChangedEnergy + energy
             self.updateEnergyTable(index, status, self.storageLevelBeforeFlex)
         elif status == 'after_flex':
             self.storageLevelAfterFlex = self.storageLevelAfterFlex + self.flexChangedEnergy
@@ -134,7 +134,7 @@ class HeatPump(FlexAgent):
             else:
                 return False
         elif status == 'before_flex':
-            if self.storageLevelBeforeFlex + self.spotChangedEnergy >= self.minStorageLevel:
+            if self.storageLevelBeforeFlex + self.spotChangedEnergy - energy >= self.minStorageLevel:
                 return True
             else:
                 return False
@@ -150,7 +150,7 @@ class HeatPump(FlexAgent):
             self.storageLevelAfterSpot -= energy
             self.updateEnergyTable(index, status, self.storageLevelAfterSpot)
         elif status == 'before_flex':
-            self.storageLevelBeforeFlex = self.storageLevelBeforeFlex + self.spotChangedEnergy
+            self.storageLevelBeforeFlex = self.storageLevelBeforeFlex + self.spotChangedEnergy - energy
             self.updateEnergyTable(index, status, self.storageLevelBeforeFlex)
         elif status == 'after_flex':
             self.storageLevelAfterFlex = self.storageLevelAfterFlex + self.flexChangedEnergy
@@ -248,12 +248,6 @@ class HeatPump(FlexAgent):
                 self.penalizeTimes.append(time)
 
             if not time+1 == self.spotTimePeriod:
-                """
-                checkLoading updates the energyTable with the load
-                    if cannot be loaded --> high negative rewards"""
-                loaded = self.checkLoading(status='after_flex', index=time)
-                if not loaded:
-                    self.penalizeTimes.append(time)
                 if dispatched:
                     if qty > 0:
                         possible, _ = self.canStore(power=qty, time=self.spotTimeInterval, status='after_flex', index=time)

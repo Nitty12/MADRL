@@ -27,8 +27,8 @@ class EVehicle(FlexAgent):
         self.dailyAbsenceTimes = None
         self.consumption = None
         self.remainingEnergy = None
-        self.flexChangedEnergy = None
-        self.spotChangedEnergy = None
+        self.flexChangedEnergy = 0
+        self.spotChangedEnergy = 0
         self.efficiency = efficiency
         """in flex , can "sell" qty ie, to reduce the qty from the spot dispatched amount (eg, to stop/reduce charging)
                     can buy qty to increase the qty from the spot dispatched amount --> not considered now"""
@@ -68,10 +68,17 @@ class EVehicle(FlexAgent):
 
     def changeSOC(self, qty, timeInterval, status, index):
         energy = qty*timeInterval
-        if not self.remainingEnergy + energy > self.maxCapacity:
-            self.remainingEnergy += energy
-            if not index == self.spotTimePeriod:
-                self.energyTable.loc[index, status] = self.remainingEnergy
+        if status == 'after_spot':
+            if not self.remainingEnergy + energy > self.maxCapacity:
+                self.remainingEnergy += energy
+                if not index == self.spotTimePeriod:
+                    self.energyTable.loc[index, status] = self.remainingEnergy
+        elif status == 'before_flex':
+            """energy will be negative"""
+            if not self.remainingEnergy + self.spotChangedEnergy + energy < self.minCapacity:
+                self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy + energy
+                if not index == self.spotTimePeriod:
+                    self.energyTable.loc[index, status] = self.remainingEnergy
 
     def checkSOC(self):
         if self.remainingEnergy >= 0.8*self.maxCapacity:
@@ -115,6 +122,8 @@ class EVehicle(FlexAgent):
         super().makeFlexBid(reqdFlexTimes)
         for time, qty, i in zip(self.dailyFlexBid['time'].values,
                                 self.dailyFlexBid['qty_bid'].values, range(self.dailySpotTime)):
+            self.spotChangedEnergy = self.energyTable.loc[time + 1, 'after_spot'] - self.energyTable.loc[
+                time, 'after_spot']
             if self.dailyAbsenceTimes[i]:
                 pass
             else:
@@ -172,7 +181,7 @@ class EVehicle(FlexAgent):
                     self.changeSOC(qty, self.spotTimeInterval, status, time+1)
 
         elif status == 'after_flex':
-            for time, qty, dispatched,i in zip(self.dailyFlexBid['time'].values,
+            for time, qty, dispatched, i in zip(self.dailyFlexBid['time'].values,
                                              self.dailyFlexBid['qty_bid'].values,
                                              self.dailyFlexBid.loc[:, 'dispatched'].values,
                                              range(self.dailySpotTime)):
@@ -196,11 +205,13 @@ class EVehicle(FlexAgent):
                     # TODO take care of consumption during this time
                 else:
                     if dispatched:
+                        """negative qty of flex dispatch"""
                         if not self.remainingEnergy + self.flexChangedEnergy < self.minCapacity:
                             self.remainingEnergy = self.remainingEnergy + self.flexChangedEnergy
                             if not time == self.spotTimePeriod:
                                 self.energyTable.loc[time+1, status] = self.remainingEnergy
                     else:
+                        """positive qty of spot dispatch"""
                         if not self.remainingEnergy + self.spotChangedEnergy > self.maxCapacity:
                             self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy
                             if not time == self.spotTimePeriod:
