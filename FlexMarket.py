@@ -14,20 +14,13 @@ class FlexMarket:
         self.day = 0
         self.dailyTimes = np.arange(self.day * self.dailyFlexTime, (self.day + 1) * self.dailyFlexTime)
 
-    def getCongestionStatus(self, grid):
-        # TODO check the congestion efficiently
-        status = grid.checkCongestion(self.dailyTimes)
-        # dailyGridStatus = grid.status.loc[grid.status['time'].isin(self.dailyTimes)]
-        # status = np.any(dailyGridStatus.loc[:, 'congestion'])
-        return status
-
     def addParticipants(self, participants):
         # participants is a list of FlexAgents
         self.participants.extend(participants)
 
     def collectBids(self, grid):
         # time periods in which flexibility is needed
-        self.reqdFlexTimes = grid.getStatus().loc[grid.getStatus()['time']
+        self.reqdFlexTimes = grid.status.loc[grid.status['time']
             .isin(self.dailyTimes)].query('congestion == True')['time']
         for participant in self.participants:
             participant.makeFlexBid(self.reqdFlexTimes)

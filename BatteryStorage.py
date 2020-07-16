@@ -144,7 +144,7 @@ class BatStorage(FlexAgent):
         spotDispatchedTimes, spotDispatchedQty = super().spotMarketEnd()
         self.spotMarketReward(spotDispatchedTimes.values, spotDispatchedQty.values)
         """change remaining energy to that of the starting time for this day to use in flex market"""
-        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot']
+        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot'].values[0]
 
     def spotMarketReward(self, time, qty):
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
@@ -168,7 +168,7 @@ class BatStorage(FlexAgent):
         self.energyTable.loc[self.energyTable['time'].isin(self.dailyTimes), 'dispatch_flex'] = \
             self.dailyFlexBid.loc[:, 'dispatched']
         """change remaining energy to that of the starting time for this day to update after_flex energy table"""
-        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot']
+        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot'].values[0]
         self.penalizeTimes = []
         for time, qty, dispatched in zip(self.dailyFlexBid['time'].values,
                                          self.dailyFlexBid['qty_bid'].values,

@@ -9,7 +9,9 @@ class DSO:
         self.grid = grid
 
     def checkCongestion(self):
-        return self.flexMarket.getCongestionStatus(self.grid)
+        # TODO check the congestion efficiently
+        status = self.grid.isCongested(self.flexMarket.dailyTimes)
+        return status
 
     def addflexAgents(self, agents):
         # agents is a list of FlexAgents

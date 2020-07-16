@@ -65,13 +65,13 @@ def agentsInit():
     #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
     #     agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
     #                            voltageLevel=voltage_level, marginalCost=0)
-    # for name in homeStorage[:2]:
-    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-    #     agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
-    #                                   voltageLevel=voltage_level, marginalCost=0)
-    for name in EV[:2]:
-        agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, name],
-                                    absenceTimes=absenceSeriesEV.loc[:, name])
+    for name in homeStorage[:2]:
+        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+        agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
+                                      voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
+    # for name in EV[:2]:
+    #     agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, name],
+    #                                 absenceTimes=absenceSeriesEV.loc[:, name])
     for name in heatPump[:2]:
         agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, name].max(),5),
                                     maxStorageLevel=10*round(loadingSeriesHP.loc[:, name].max(),5),
@@ -93,7 +93,6 @@ def getEVSeries():
     absenceSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
                                  encoding='unicode_escape')
     absenceSeries.drop('0', axis=1, inplace=True)
-    absenceSeries = absenceSeries.apply(pd.to_numeric)
     return capacitySeries, absenceSeries
 
 def getHPSeries():
@@ -106,6 +105,7 @@ def getHPSeries():
     loadingSeries.drop('NNF', axis=1, inplace=True)
     loadingSeries.drop(loadingSeries.index[0], inplace=True)
     loadingSeries.drop(loadingSeries.index[8760], inplace=True)
+    loadingSeries.reset_index(drop=True, inplace=True)
     loadingSeries = loadingSeries.apply(pd.to_numeric)
     return loadingSeries
 

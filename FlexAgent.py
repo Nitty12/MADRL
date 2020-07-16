@@ -17,8 +17,8 @@ class FlexAgent:
         self.dailySpotTime = dailySpotTime
         self.day = None
         self.dailyTimes = None
-        self.dailyFlexTime = 96
-        self.flexTimePeriod = 8760*4
+        self.dailyFlexTime = 24
+        self.flexTimePeriod = 8760
         self.spotTimeInterval = 1  # in hours
         self.flexTimeInterval = 0.25  # in hours
         self.needCounterTrade = needCounterTrade  # Is counter trading responsibility of FlexAgent?

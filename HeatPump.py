@@ -225,7 +225,7 @@ class HeatPump(FlexAgent):
                     # self.dailyFlexBid.loc[i, 'qty_bid'] = 0
                     # TODO what to do here?
                     pass
-            assert -self.maxPower <= dailyBid.loc[i, 'qty_bid'] <= self.maxPower, \
+            assert -self.maxPower <= dailyBid.loc[t, 'qty_bid'] <= self.maxPower, \
                 'Qty bid cannot be more than maxPower'
 
     def flexMarketEnd(self):
@@ -254,7 +254,8 @@ class HeatPump(FlexAgent):
                         if possible:
                             self.store(power=qty, time=self.spotTimeInterval, status='after_flex', index=time + 1)
                         else:
-                            if not self.penalizeTimes[-1] == time:
+                            """if the list is empty or if time has not been added"""
+                            if not self.penalizeTimes or not self.penalizeTimes[-1] == time:
                                 self.penalizeTimes.append(time)
                     else:
                         """consider negative bid as load"""
@@ -262,7 +263,7 @@ class HeatPump(FlexAgent):
                         if possible:
                             self.load(load=-qty, time=self.spotTimeInterval, status='after_flex', index=time + 1)
                         else:
-                            if not self.penalizeTimes[-1] == time:
+                            if not self.penalizeTimes or not self.penalizeTimes[-1] == time:
                                 self.penalizeTimes.append(time)
                 else:
                     self.storageLevelAfterFlex = self.storageLevelAfterFlex + self.spotChangedEnergy

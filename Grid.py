@@ -56,12 +56,12 @@ class Grid:
 
         # TODO import the load flow sensitivities
 
-    def checkCongestion(self, time):
+    def isCongested(self, time):
         """for testing"""
         self.congestedLines.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numLines))
         self.congestedNodes.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numNodes))
         for col_name in self.congestedLines:
-            self.status.loc[time, 'congestion'] |= self.congestedLines[time, col_name]
+            self.status.loc[time, 'congestion'] |= self.congestedLines.loc[time, col_name]
         return np.any(self.status.loc[time, 'congestion'].values)
 
     def loadFlowApprox(self):

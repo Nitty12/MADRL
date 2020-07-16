@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
-
+import ast
 
 from FlexAgent import FlexAgent
 
@@ -92,12 +92,12 @@ class EVehicle(FlexAgent):
 
     def spotMarketEnd(self):
         spotDispatchedTimes, spotDispatchedQty = super().spotMarketEnd()
-        self.dailyAbsenceTimes = self.absenceTimes.loc[self.day, :]
+        self.dailyAbsenceTimes = ast.literal_eval(self.absenceTimes.loc[self.day, :])
         """convert dailyAbsenceTimes to 24 period if in 96 period"""
         self.dailyAbsenceTimes = [time for i, time in enumerate(self.dailyAbsenceTimes) if i%4==0]
         penalizeTimes, startingPenalty = self.checkPenalties(spotDispatchedTimes, spotDispatchedQty, 'after_spot')
         """change remaining energy to that of the starting time for this day to use in flex market"""
-        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot']
+        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot'].values[0]
         self.spotMarketReward(spotDispatchedTimes.values, spotDispatchedQty.values, penalizeTimes, startingPenalty)
 
     def spotMarketReward(self, time, qty, penalizeTimes, startingPenalty):
@@ -132,7 +132,7 @@ class EVehicle(FlexAgent):
     def flexMarketEnd(self):
         flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice = super().flexMarketEnd()
         """change remaining energy to that of the starting time for this day to update after_flex energy table"""
-        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot']
+        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot'].values[0]
         penalizeTimes, startingPenalty = self.checkPenalties(flexDispatchedTimes, flexDispatchedQty, 'after_flex')
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice, penalizeTimes, startingPenalty)
 
