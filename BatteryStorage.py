@@ -70,7 +70,7 @@ class BatStorage(FlexAgent):
             chargePower = self.maxPower
 
         energy = chargePower * chargeTime * self.efficiency
-        if status == 'before_spot':
+        if status == 'after_spot':
             if self.remainingEnergy + energy > self.maxCapacity:
                 return False, self.remainingEnergy + energy - self.maxCapacity
             else:
@@ -99,7 +99,7 @@ class BatStorage(FlexAgent):
 
         # energy will be negative as dischargePower is negative
         energy = dischargePower * dischargeTime * self.efficiency
-        if status == 'before_spot':
+        if status == 'after_spot':
             if self.remainingEnergy + energy < self.minCapacity:
                 return False, self.minCapacity - (self.remainingEnergy + energy)
             else:
@@ -119,28 +119,26 @@ class BatStorage(FlexAgent):
 
     def changeSOC(self, qty, time, status, index):
         energy = qty * time * self.efficiency
-        if status == 'before_spot':
+        if status == 'after_spot':
             self.remainingEnergy += energy
-            self.SOC = self.remainingEnergy / self.maxCapacity
-            if not index == self.spotTimePeriod:
-                self.energyTable.loc[index, status] = self.remainingEnergy
         elif status == 'before_flex':
-            if not index == self.spotTimePeriod:
-                self.energyTable.loc[index, status] = self.remainingEnergy + self.spotChangedEnergy + energy
+            self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy + energy
         elif status == 'after_flex':
-            if not index == self.spotTimePeriod:
-                self.energyTable.loc[index, status] = self.remainingEnergy + self.flexChangedEnergy
+            self.remainingEnergy = self.remainingEnergy + self.flexChangedEnergy
+        if not index == self.spotTimePeriod:
+            self.energyTable.loc[index, status] = self.remainingEnergy
+        self.SOC = self.remainingEnergy / self.maxCapacity
 
     def makeSpotBid(self):
-        status = 'before_spot'
+        status = 'after_spot'
         self.boundSpotBidMultiplier(low=self.lowSpotBidLimit, high=self.highSpotBidLimit)
         super().makeSpotBid()
         self.makeBid(self.dailySpotBid, status)
         self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)] = self.dailySpotBid
 
     def spotMarketEnd(self):
-        self.energyTable.loc[self.energyTable['time'].isin(self.dailyTimes), 'dispatch_spot'] = \
-            self.dailySpotBid.loc[:, 'dispatched']
+        # self.energyTable.loc[self.energyTable['time'].isin(self.dailyTimes), 'dispatch_spot'] = \
+        #     self.dailySpotBid.loc[:, 'dispatched']
         spotDispatchedTimes, spotDispatchedQty = super().spotMarketEnd()
         self.spotMarketReward(spotDispatchedTimes.values, spotDispatchedQty.values)
         """change remaining energy to that of the starting time for this day to use in flex market"""
@@ -165,8 +163,8 @@ class BatStorage(FlexAgent):
 
     def flexMarketEnd(self):
         flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice= super().flexMarketEnd()
-        self.energyTable.loc[self.energyTable['time'].isin(self.dailyTimes), 'dispatch_flex'] = \
-            self.dailyFlexBid.loc[:, 'dispatched']
+        # self.energyTable.loc[self.energyTable['time'].isin(self.dailyTimes), 'dispatch_flex'] = \
+        #     self.dailyFlexBid.loc[:, 'dispatched']
         """change remaining energy to that of the starting time for this day to update after_flex energy table"""
         self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot'].values[0]
         self.penalizeTimes = []
@@ -179,12 +177,13 @@ class BatStorage(FlexAgent):
             self.spotChangedEnergy = self.energyTable.loc[time + 1, 'after_spot'] - self.energyTable.loc[time, 'after_spot']
             if not time+1 == self.spotTimePeriod:
                 if dispatched:
-                    if qty > 0:
+                    if qty >= 0:
                         possible, _ = self.canCharge(chargePower=qty, chargeTime=self.spotTimeInterval,
                                                             status='after_flex', index=time)
                         if possible:
                             self.changeSOC(qty, self.spotTimeInterval, 'after_flex', time+1)
                         else:
+                            self.changeSOC(0, self.spotTimeInterval, 'after_flex', time + 1)
                             self.penalizeTimes.append(time)
                     else:
                         possible, _ = self.canDischarge(dischargePower=qty, dischargeTime=self.spotTimeInterval,
@@ -192,6 +191,7 @@ class BatStorage(FlexAgent):
                         if possible:
                             self.changeSOC(qty, self.spotTimeInterval, 'after_flex', time+1)
                         else:
+                            self.changeSOC(0, self.spotTimeInterval, 'after_flex', time + 1)
                             self.penalizeTimes.append(time)
                 else:
                     self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy
@@ -201,7 +201,7 @@ class BatStorage(FlexAgent):
         """After flex market ends for a day, the final energy must be updated for all columns in energy table as it is 
         the final realised energy after the day"""
         nextDayFirstTime = (self.day + 1)*self.dailySpotTime
-        self.energyTable.loc[nextDayFirstTime, ['before_spot', 'after_spot', 'before_flex', 'after_flex']] = \
+        self.energyTable.loc[nextDayFirstTime, ['after_spot', 'before_flex', 'after_flex']] = \
             self.energyTable.loc[nextDayFirstTime, 'after_flex']
         self.remainingEnergy = self.energyTable.loc[nextDayFirstTime, 'after_flex']
 
@@ -234,7 +234,7 @@ class BatStorage(FlexAgent):
                     """If charging by a certain amount is not possible, change the bid to 0 and penalize the agent"""
                     dailyBid.loc[time, 'qty_bid'] = 0
                     self.changeSOC(0, self.spotTimeInterval, status, time + 1)
-                    if status == 'before_spot':
+                    if status == 'after_spot':
                         self.penalizeTimes.append(time)
 
             elif qty > 0:
@@ -248,7 +248,7 @@ class BatStorage(FlexAgent):
                     """If charging by a certain amount is not possible, change the bid to 0 and penalize the agent"""
                     dailyBid.loc[time, 'qty_bid'] = 0
                     self.changeSOC(0, self.spotTimeInterval, status, time + 1)
-                    if status == 'before_spot':
+                    if status == 'after_spot':
                         self.penalizeTimes.append(time)
 
             assert -self.maxPower <= dailyBid.loc[time, 'qty_bid'] <= self.maxPower, \

@@ -100,7 +100,7 @@ class HeatPump(FlexAgent):
         energy = power * time
         if status == 'before_spot':
             self.storageLevelAfterSpot += energy
-            self.updateEnergyTable(index, status, self.storageLevelAfterSpot)
+            self.updateEnergyTable(index, 'after_spot', self.storageLevelAfterSpot)
         elif status == 'before_flex':
             self.storageLevelBeforeFlex = self.storageLevelBeforeFlex + self.spotChangedEnergy + energy
             self.updateEnergyTable(index, status, self.storageLevelBeforeFlex)
@@ -110,15 +110,18 @@ class HeatPump(FlexAgent):
 
     def checkLoading(self, status, index):
         load = self.scheduledLoad.loc[index, 'load']
+        if load == 0:
+            return True
         possible = self.canLoad(load, self.spotTimeInterval, status, index)
         if possible:
-            """
-            energyTable holds energy at the start of the specified time
-            so, a load in current time affects the energy at the next time
-            """
-            self.load(load=load, time=self.spotTimeInterval, status=status, index=index+1)
-            if status == 'after_flex':
-                self.scheduledLoad.loc[index, 'loaded'] = True
+            """only load before spot since others already take into account the loading via 
+            spotChangedEnergy and flexChangedEnergy"""
+            if status == 'before_spot':
+                """
+                energyTable holds energy at the start of the specified time
+                so, a load in current time affects the energy at the next time
+                """
+                self.load(load=load, time=self.spotTimeInterval, status=status, index=index+1)
             return True
         else:
             # print("WARNING: Heat pump {0} cannot be loaded at index {1} {2}!".format(self.id, index, status))
@@ -134,12 +137,12 @@ class HeatPump(FlexAgent):
             else:
                 return False
         elif status == 'before_flex':
-            if self.storageLevelBeforeFlex + self.spotChangedEnergy - energy >= self.minStorageLevel:
+            if self.storageLevelBeforeFlex - energy >= self.minStorageLevel:
                 return True
             else:
                 return False
         elif status == 'after_flex':
-            if self.storageLevelAfterFlex + self.flexChangedEnergy >= self.minStorageLevel:
+            if self.storageLevelAfterFlex - energy >= self.minStorageLevel:
                 return True
             else:
                 return False
@@ -148,12 +151,12 @@ class HeatPump(FlexAgent):
         energy = load * time
         if status == 'before_spot':
             self.storageLevelAfterSpot -= energy
-            self.updateEnergyTable(index, status, self.storageLevelAfterSpot)
+            self.updateEnergyTable(index, 'after_spot', self.storageLevelAfterSpot)
         elif status == 'before_flex':
-            self.storageLevelBeforeFlex = self.storageLevelBeforeFlex + self.spotChangedEnergy - energy
+            self.storageLevelBeforeFlex = self.storageLevelBeforeFlex - energy
             self.updateEnergyTable(index, status, self.storageLevelBeforeFlex)
         elif status == 'after_flex':
-            self.storageLevelAfterFlex = self.storageLevelAfterFlex + self.flexChangedEnergy
+            self.storageLevelAfterFlex = self.storageLevelAfterFlex - energy
             self.updateEnergyTable(index, status, self.storageLevelAfterFlex)
 
     def makeSpotBid(self):
@@ -183,6 +186,8 @@ class HeatPump(FlexAgent):
     def makeFlexBid(self, reqdFlexTimes):
         status = 'before_flex'
         self.boundFlexBidMultiplier(low=self.lowFlexBidLimit, high=self.highFlexBidLimit)
+        """copy spot bids so that the flexbid multiplier is applied on this instead of maxPower"""
+        self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes), 'qty_bid'] = self.dailySpotBid.loc[:, 'qty_bid']
         super().makeFlexBid(reqdFlexTimes)
         self.penalizeTimes = []
         self.makeBid(self.dailyFlexBid, status)
@@ -223,6 +228,7 @@ class HeatPump(FlexAgent):
                 else:
                     # """if reduction is not possible, modify the bid because it is not realisable"""
                     # self.dailyFlexBid.loc[i, 'qty_bid'] = 0
+                    self.load(load=0, time=self.spotTimeInterval, status=status, index=t + 1)
                     # TODO what to do here?
                     pass
             assert -self.maxPower <= dailyBid.loc[t, 'qty_bid'] <= self.maxPower, \
@@ -257,6 +263,7 @@ class HeatPump(FlexAgent):
                             """if the list is empty or if time has not been added"""
                             if not self.penalizeTimes or not self.penalizeTimes[-1] == time:
                                 self.penalizeTimes.append(time)
+                            self.store(power=0, time=self.spotTimeInterval, status='after_flex', index=time + 1)
                     else:
                         """consider negative bid as load"""
                         possible = self.canLoad(load=-qty, time=self.spotTimeInterval, status='after_flex', index=time)
@@ -265,6 +272,7 @@ class HeatPump(FlexAgent):
                         else:
                             if not self.penalizeTimes or not self.penalizeTimes[-1] == time:
                                 self.penalizeTimes.append(time)
+                            self.load(load=0, time=self.spotTimeInterval, status='after_flex', index=time + 1)
                 else:
                     self.storageLevelAfterFlex = self.storageLevelAfterFlex + self.spotChangedEnergy
                     self.updateEnergyTable(time+1, 'after_flex', self.storageLevelAfterFlex)
@@ -274,7 +282,7 @@ class HeatPump(FlexAgent):
         """After flex market ends for a day, the final energy must be updated for all columns in energy table as it is 
         the final realised energy after the day"""
         nextDayFirstTime = (self.day + 1)*self.dailySpotTime
-        self.energyTable.loc[nextDayFirstTime, ['before_spot', 'before_flex', 'after_flex']] = \
+        self.energyTable.loc[nextDayFirstTime, ['after_spot', 'before_flex', 'after_flex']] = \
             self.energyTable.loc[nextDayFirstTime, 'after_flex']
         self.storageLevelAfterSpot = self.energyTable.loc[nextDayFirstTime, 'after_flex']
         self.storageLevelBeforeFlex = self.energyTable.loc[nextDayFirstTime, 'after_flex']
