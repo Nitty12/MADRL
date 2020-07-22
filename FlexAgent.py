@@ -219,7 +219,7 @@ class FlexAgent:
                 hourly dispatched power of the agent in 't-1' Flex market,
                 spot or flex state
         """
-        # TODO add reqd flex times?
+        # TODO add reqd flex times?, add weekend vs weekdays?
         if self.day == 0:
             MCP = np.random.randint(15, 30, size=24)
             forecast = np.full(self.dailySpotTime, 0)

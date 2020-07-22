@@ -29,6 +29,7 @@ class PVG(FlexAgent):
 
         self.flexBid.loc[:, 'price'] = np.full(self.flexTimePeriod, self.feedInPremium, dtype=float)
         self.flexBid.loc[:, 'qty_bid'] = np.full(self.flexTimePeriod, -self.maxPower, dtype=float)
+        # TODO change flex bid quantities to spot bid values
 
     def printInfo(self):
         super().printInfo()
