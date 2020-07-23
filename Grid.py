@@ -13,13 +13,11 @@ class Grid:
         self.lines = []
         self.data = None
         self.loading = None
-        self.congestedLines = None
-        self.congestedNodes = None
-        # self.status = pd.DataFrame(data={'time': np.arange(self.TimePeriod),
-        #                                  'congestion': np.full(self.TimePeriod, False)})
-        """for testing"""
-        self.status = pd.DataFrame(data={'time': np.arange(self.TimePeriod),
-                                         'congestion': np.random.choice([True, False], size=(self.TimePeriod, ))})
+        # self.congestedLines = None
+        # self.congestedNodes = None
+        self.reqdFlexTimes = None
+        self.flexAgents = []
+        self.congestionStatus = None
         """contains the total load per node for the households"""
         self.householdLoad = None
         """contains the list of households in each node"""
@@ -30,6 +28,14 @@ class Grid:
         power flow approximation"""
         self.nodeSensitivityDict = None
         self.importGrid()
+        self.day = 0
+        self.dailyFlexTime = 24
+        self.dailyTimes = None
+        self.reset()
+
+    def reset(self):
+        self.day = 0
+        self.dailyTimes = np.arange(self.day * self.dailyFlexTime, (self.day + 1) * self.dailyFlexTime)
 
     def importGrid(self):
         """get the grid data from the CSV"""
@@ -57,26 +63,23 @@ class Grid:
         self.numNodes = len(self.nodes)
         self.numLines = len(self.lines)
 
-        self.loading = pd.DataFrame(np.full((self.numNodes + self.numLines, 3), 0.0),
-                                    columns=['Name', 'I_rated_A', 'I_A'])
-        self.loading.loc[:, 'Name'] = self.data.loc[:, 'Name']
-        self.loading.loc[:, 'I_rated_A'] = self.data.loc[:, 'I_rated_A']
-        self.congestedLines = pd.DataFrame(np.full((self.TimePeriod, self.numLines), False))
-        self.congestedLines.columns = self.lines
-        self.congestedNodes = pd.DataFrame(np.full((self.TimePeriod, self.numNodes), False))
-        self.congestedNodes.columns = self.nodes
-
+        self.loading = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), 0.0),
+                                    columns=list(self.data.loc[:, 'Name']))
+        self.congestionStatus = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), False),
+                                             columns=list(self.data.loc[:, 'Name']))
         """get the household load data from the CSV"""
         self.getHouseholdLoad()
         # TODO import the load flow sensitivities
 
-    def isCongested(self, time):
-        """for testing"""
-        self.congestedLines.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numLines))
-        self.congestedNodes.loc[time, :] = np.random.choice([True, False], size=(len(time), self.numNodes))
-        for col_name in self.congestedLines:
-            self.status.loc[time, 'congestion'] |= self.congestedLines.loc[time, col_name]
-        return np.any(self.status.loc[time, 'congestion'].values)
+    def isCongested(self):
+        self.powerFlowApprox()
+        ratedIMat = self.data.loc[:, 'I_rated_A'].to_numpy().reshape(-1, 1)
+        self.congestionStatus.loc[:, :] = self.loading.loc[:, :] > ratedIMat.T
+        if self.congestionStatus.any(axis=None):
+            self.reqdFlexTimes = self.dailyTimes[self.congestionStatus.any(axis='columns').values]
+            return True
+        else:
+            return False
 
     def getHouseholdLoad(self):
         path = os.getcwd()
@@ -143,14 +146,26 @@ class Grid:
                         self.nodeSensitivityDict[node] = match.group()
                         break
 
-    def loadFlowApprox(self, day):
+    def powerFlowApprox(self):
+        # TODO change the pathname for the correct loading at each time
         self.loadSensitivityMatrix()
         """add the household loads to the lines"""
         for node in self.householdLoad:
-            self.loading.loc[:, ['I_A']] += self.sensitivity.loc[:, self.nodeSensitivityDict[node]] * \
-                                            self.householdLoad.loc[day, node]
-        # TODO add the agent loads
+            sensitivityMat = self.sensitivity.loc[:, self.nodeSensitivityDict[node]].to_numpy().reshape(-1, 1)
+            householdLoadMat = self.householdLoad.loc[self.dailyTimes, node].to_numpy().reshape(-1, 1)
+            # TODO should I negate the sensitivityMat?
+            self.loading.loc[:, :] += householdLoadMat @ sensitivityMat.T
+        """add the flex agent contribution to the lines"""
+        for agent in self.flexAgents:
+            sensitivityMat = self.sensitivity.loc[:, agent.id].to_numpy().reshape(-1, 1)
+            bidMat = agent.dailySpotBid.loc[: 'qty_bid'].to_numpy().reshape(-1, 1)
+            # TODO should I negate the sensitivityMat?
+            self.loading.loc[:, :] += bidMat @ sensitivityMat.T
         # TODO set values in congestedLines and congestedNodes
 
     def getStatus(self):
-        return self.status
+        return self.congestionStatus
+
+    def endDay(self):
+        self.day += 1
+        self.dailyTimes = np.arange(self.day * self.dailyFlexTime, (self.day + 1) * self.dailyFlexTime)

@@ -9,10 +9,10 @@ class SpotMarket:
         self.spotTimePeriod = spotTimePeriod
         self.dailySpotTime = dailySpotTime
         self.day = 0
-        self.dailyTimes = np.arange(self.day * self.dailySpotTime, (self.day + 1) * self.dailySpotTime)
+        self.dailyTimes = None
         # hourly market clearing price
-        self.MCP = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                      'price': np.zeros(self.spotTimePeriod, dtype=float)})
+        self.MCP = None
+        self.reset()
 
     def reset(self):
         self.day = 0

@@ -8,7 +8,8 @@ class FlexMarket:
         self.reqdFlexTimes = None
         self.dailyFlexTime = 24
         self.day = 0
-        self.dailyTimes = np.arange(self.day * self.dailyFlexTime, (self.day + 1) * self.dailyFlexTime)
+        self.dailyTimes = None
+        self.reset()
 
     def reset(self):
         self.day = 0
@@ -18,25 +19,20 @@ class FlexMarket:
         # participants is a list of FlexAgents
         self.participants.extend(participants)
 
-    def collectBids(self, grid):
-        # time periods in which flexibility is needed
-        self.reqdFlexTimes = grid.status.loc[grid.status['time']
-            .isin(self.dailyTimes)].query('congestion == True')['time']
+    def collectBids(self, reqdFlexTimes):
+        self.reqdFlexTimes = reqdFlexTimes
         for participant in self.participants:
             participant.makeFlexBid(self.reqdFlexTimes)
             assert len(participant.getFlexBid(self.reqdFlexTimes).index) == len(self.reqdFlexTimes),\
                 'Length of flex market and bid not equal'
-            self.bids[participant.getID()] = participant.getFlexBid(self.reqdFlexTimes)
+            self.bids[participant.id] = participant.getFlexBid(self.reqdFlexTimes)
 
-    def sendDispatch(self):
+    def sendDispatch(self, flexDispatchStatus):
         for participant in self.participants:
-            # just a random boolean assignment for testing purpose
-            flexDispatchStatus = np.random.choice([True, False], size=len(self.reqdFlexTimes.values))
-            self.bids[participant.getID()].loc[:, 'dispatched'] = flexDispatchStatus
+            self.bids[participant.id].loc[:, 'dispatched'] = flexDispatchStatus.loc[:, participant.id]
             # setting explicitly
             participant.dailyFlexBid.loc[participant.dailyFlexBid['time'].isin(self.reqdFlexTimes), 'dispatched'] = \
-                flexDispatchStatus
-
+                flexDispatchStatus.loc[:, participant.id]
             participant.flexMarketEnd()
 
     def endDay(self):

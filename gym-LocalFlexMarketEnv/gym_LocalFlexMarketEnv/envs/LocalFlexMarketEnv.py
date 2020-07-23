@@ -13,7 +13,6 @@ class LocalFlexMarketEnv(gym.Env):
         super().__init__()
         self.SpotMarket = SpotMarket
         self.DSO = DSO
-        self.grid = grid
         self.nAgents = len(self.SpotMarket.participants)
         self.agents = self.SpotMarket.participants
         self.time = 0
@@ -163,7 +162,7 @@ class LocalFlexMarketEnv(gym.Env):
     def flexStep(self):
         if self.DSO.checkCongestion():
             self.DSO.askFlexibility()
-            self.DSO.optFlex(self.grid)
+            self.DSO.optFlex()
         self.DSO.endDay()
         self.SpotMarket.endDay()
 
