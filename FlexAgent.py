@@ -59,7 +59,7 @@ class FlexAgent:
         self.penaltyViolation = -100
         self.spotState = None
 
-    def reset(self):
+    def reset(self, *args, **kwargs):
         self.day = 0
         self.dailyTimes = np.arange(self.day * self.dailySpotTime, (self.day + 1) * self.dailySpotTime)
         self.spotBid = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),

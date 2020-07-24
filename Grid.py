@@ -40,7 +40,7 @@ class Grid:
     def importGrid(self):
         """get the grid data from the CSV"""
         script_dir = os.path.dirname(__file__)  # <-- absolute dir the script is in
-        rel_path = "data\CBCO_Results_.csv"
+        rel_path = "../inputs/CBCO_Results_.csv"
         abs_file_path = os.path.join(script_dir, rel_path)
         self.data = pd.read_csv(abs_file_path, sep=';', comment='#', header=0, skiprows=1, error_bad_lines=False)
         """skip the unwanted rows in between"""
@@ -127,7 +127,7 @@ class Grid:
 
     def loadSensitivityMatrix(self):
         path = os.getcwd()
-        datapath = os.path.join(path, "../inputs/Sensitivities_Init_.csv")
+        datapath = os.path.join(path, "../inputs/Sensitivities_Result_.csv")
         self.sensitivity = None
         self.sensitivity = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
                                   encoding='unicode_escape')

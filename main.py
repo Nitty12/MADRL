@@ -33,7 +33,7 @@ generation is -ve qty and load is +ve qty
 
 def agentsInit():
     path = os.getcwd()
-    datapath = os.path.join(path, "data\RA_RD_Import_.csv")
+    datapath = os.path.join(path, "../inputs/RA_RD_Import_.csv")
     data = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False)
     data = data.loc[1:, ['Name', 'Location', 'Un', 'min. P', 'max. P']]
     data.columns = ['Name', 'Location', 'Un_kV', 'P_min_MW', 'P_max_MW']
@@ -42,6 +42,11 @@ def agentsInit():
 
     loadingSeriesHP = getHPSeries()
     capacitySeriesEV, absenceSeriesEV = getEVSeries()
+    relativePath = "../inputs/PV_Zeitreihe_nnf_1h.csv"
+    genSeriesPV = getGenSeries(relativePath)
+    relativePath = "../inputs/WEA_nnf_1h.csv"
+    genSeriesWind = getGenSeries(relativePath)
+
     """contains names of the respective agents"""
     PV = []
     wind = []
@@ -61,23 +66,28 @@ def agentsInit():
             biomass.append(name)
 
     agentsDict = {}
-    # for name in PV[:2]:
-    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-    #     agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-    #                            voltageLevel=voltage_level, marginalCost=0)
-    for name in homeStorage[:2]:
+    """negate the PV and Wind timeseries to make generation qty -ve"""
+    for name in PV[:1]:
+        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+        agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
+                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, name])
+    for name in wind[:1]:
+        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+        agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
+                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, name])
+    for name in homeStorage[:1]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                       voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
     # for name in EV[:2]:
     #     agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, name],
     #                                 absenceTimes=absenceSeriesEV.loc[:, name])
-    for name in heatPump[:2]:
+    for name in heatPump[:1]:
         agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, name].max(),5),
                                     maxStorageLevel=10*round(loadingSeriesHP.loc[:, name].max(),5),
                                     scheduledLoad=loadingSeriesHP.loc[:, name])
-
     return agentsDict
+
 
 def getEVSeries():
     """EV capacity timeseries"""
@@ -108,6 +118,22 @@ def getHPSeries():
     loadingSeries.reset_index(drop=True, inplace=True)
     loadingSeries = loadingSeries.apply(pd.to_numeric)
     return loadingSeries
+
+
+def getGenSeries(relativePath):
+    """get PV and wind generation timeseries"""
+    path = os.getcwd()
+    datapath = os.path.join(path, relativePath)
+    genSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                            encoding='unicode_escape', nrows=0)
+    genSeries.drop('NNF', axis=1, inplace=True)
+    columnNames = list(genSeries)
+    genSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+                            encoding='unicode_escape', dtype=float)
+    genSeries.drop('NNF', axis=1, inplace=True)
+    genSeries.columns = columnNames
+    return genSeries
+
 
 def getAgentDetails(data, name):
     details = data.loc[data['Name'] == name]
