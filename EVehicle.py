@@ -31,9 +31,9 @@ class EVehicle(FlexAgent):
         self.spotChangedEnergy = 0
         self.efficiency = efficiency
         """in flex , can "sell" qty ie, to reduce the qty from the spot dispatched amount (eg, to stop/reduce charging)
-                    can buy qty to increase the qty from the spot dispatched amount --> not considered now"""
+                    can buy qty to increase the qty from the spot dispatched amount"""
         self.lowFlexBidLimit = -1
-        self.highFlexBidLimit = 0
+        self.highFlexBidLimit = 1
         self.reset()
 
     def reset(self):
@@ -48,23 +48,10 @@ class EVehicle(FlexAgent):
                                                                     dtype=float),
                                               'after_flex': np.full(self.flexTimePeriod, self.remainingEnergy,
                                                                     dtype=float)})
-        # self.importTimeseries()
-        # TODO remove the random initialization later
-        self.spotBidMultiplier = np.random.uniform(self.lowSpotBidLimit, self.highSpotBidLimit, size=self.dailySpotTime)
-        self.flexBidMultiplier = np.random.uniform(self.lowFlexBidLimit, self.highFlexBidLimit, size=self.dailySpotTime)
-        self.flexBidPriceMultiplier = np.random.uniform(self.lowPriceLimit, self.highPriceLimit, size=self.dailySpotTime)
-
 
     def printInfo(self):
         super().printInfo()
         print("Type: {}\n".format(self.type))
-
-    # def importTimeseries(self):
-    #     # TODO initialize the timeseries
-    #     self.absenceTimes = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod)})
-    #     self.consumption = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-    #                                           'load': np.full(self.spotTimePeriod, self.maxPower,
-    #                                                                  dtype=float)})
 
     def changeSOC(self, qty, timeInterval, status, index):
         energy = qty*timeInterval

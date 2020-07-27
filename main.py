@@ -46,46 +46,53 @@ def agentsInit():
     genSeriesPV = getGenSeries(relativePath)
     relativePath = "../inputs/WEA_nnf_1h.csv"
     genSeriesWind = getGenSeries(relativePath)
+    loadingSeriesDSM = getDSMSeries()
 
     """contains names of the respective agents"""
-    PV = []
-    wind = []
-    homeStorage = []
-    DSM =[]
-    biomass = []
-    heatPump = list(loadingSeriesHP)
-    EV = list(capacitySeriesEV)
+    PVList = []
+    windList = []
+    homeStorageList = []
+    DSMList =[]
+    heatPumpList = list(loadingSeriesHP)
+    EVList = list(capacitySeriesEV)
     for name in data['Name']:
-        if name.endswith('_solar') or name.endswith('_nsPVErsatzeinsp'):
-            PV.append(name)
+        if name.endswith(('_solar', '_nsPVErsatzeinsp')):
+            PVList.append(name)
         elif name.endswith('_wea'):
-            wind.append(name)
+            windList.append(name)
         elif name.endswith('_nsHeimSpeicherErsatzeinsp'):
-            homeStorage.append(name)
-        elif name.endswith('_biomasse'):
-            biomass.append(name)
+            homeStorageList.append(name)
+        elif name.endswith(('Gewerbe', 'Gewerbe_MS', 'Business Base', 'Business Base_MS', 'BusinessSamstag',
+                            'BusinessSamstag_MS', 'Einzelhandel','Einzelhandel_MS', 'Gastronomie', 'Gastronomie_MS',
+                            'BusinessPeak', 'BusinessPeak_MS')):
+            DSMList.append(name)
 
     agentsDict = {}
     """negate the PV and Wind timeseries to make generation qty -ve"""
-    for name in PV[:1]:
+    for name in PVList[:1]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, name])
-    for name in wind[:1]:
+    for name in windList[:1]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, name])
-    for name in homeStorage[:1]:
+    for name in homeStorageList[:1]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                       voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
-    # for name in EV[:2]:
+    # for name in EVList[:2]:
     #     agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, name],
     #                                 absenceTimes=absenceSeriesEV.loc[:, name])
-    for name in heatPump[:1]:
+    for name in heatPumpList[:1]:
+        #TODO check if the latest RA_RD_Import_ file contains maxpower
         agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, name].max(),5),
                                     maxStorageLevel=10*round(loadingSeriesHP.loc[:, name].max(),5),
                                     scheduledLoad=loadingSeriesHP.loc[:, name])
+    for name in DSMList[:1]:
+        #TODO check if the latest RA_RD_Import_ file contains maxpower
+        agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesHP.loc[:, name].max(),5),
+                               scheduledLoad=loadingSeriesDSM.loc[:, name])
     return agentsDict
 
 
@@ -114,11 +121,24 @@ def getHPSeries():
     """cleaning the dataframe"""
     loadingSeries.drop('NNF', axis=1, inplace=True)
     loadingSeries.drop(loadingSeries.index[0], inplace=True)
+    # TODO check if there is this extra row in every HP series
     loadingSeries.drop(loadingSeries.index[8760], inplace=True)
     loadingSeries.reset_index(drop=True, inplace=True)
     loadingSeries = loadingSeries.apply(pd.to_numeric)
     return loadingSeries
 
+def getDSMSeries():
+    """DSM scheduled load timeseries"""
+    path = os.getcwd()
+    datapath = os.path.join(path, "../inputs/ang_Kunden_GHD_nnf_1h.csv")
+    loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                 encoding='unicode_escape')
+    """cleaning the dataframe"""
+    loadingSeries.drop('NNF', axis=1, inplace=True)
+    loadingSeries.drop(loadingSeries.index[0], inplace=True)
+    loadingSeries.reset_index(drop=True, inplace=True)
+    loadingSeries = loadingSeries.apply(pd.to_numeric)
+    return loadingSeries
 
 def getGenSeries(relativePath):
     """get PV and wind generation timeseries"""

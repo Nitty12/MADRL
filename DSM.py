@@ -6,14 +6,14 @@ from AgentNeuralNet import AgentNeuralNet
 
 
 class DSM(FlexAgent):
-    def __init__(self, id, location=[0, 0], maxPower = 0, marginalCost = 0):
+    def __init__(self, id, location=[0, 0], maxPower = 0, marginalCost = 0, scheduledLoad=None):
 
         super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
         self.type = "Demand Side Management"
-        self.scheduledLoad = None
-        # TODO baseLoad can be time dependent
-        # self.baseLoad = 0.2*self.maxPower
-        self.baseLoad = None
+        self.scheduledLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
+                                                'load': scheduledLoad})
+        self.baseLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
+                                           'load': 0.2*scheduledLoad})
         """spotBidMultiplier of DSM agent is used to redistribute the difference (P_total - P_base)
             of each hour : To incorporate the constraints
                                     if for each hour P_total > Pmax --> Negative rewards
@@ -34,31 +34,15 @@ class DSM(FlexAgent):
 
     def reset(self):
         super().reset()
-        self.importTimeseries()
         """changing spot qty bid from maxPower to scheduled load"""
         self.spotBid.loc[:, 'qty_bid'] = self.scheduledLoad.loc[:, 'load']
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
         self.flexBid.loc[:, 'qty_bid'] = self.spotBid.loc[:, 'qty_bid']
         self.dailyFlexBid = self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)]
-        # TODO remove the random initialization later
-        self.spotBidMultiplier = np.random.uniform(0, 2, size=self.dailySpotTime)
-        self.flexBidMultiplier = np.random.uniform(0, 2, size=self.dailySpotTime)
-        self.flexBidPriceMultiplier = np.random.uniform(1, 5, size=self.dailySpotTime)
 
     def printInfo(self):
         super().printInfo()
         print("Type: {}".format(self.type))
-
-    def importTimeseries(self):
-        # get the timeseries data
-        path = ''
-        ts = pd.read_csv(path)
-        self.scheduledLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                                'load': np.full(self.spotTimePeriod, 0)})
-        # TODO initialize the timeseries into scheduledLoad
-
-        self.baseLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                           'load': 0.2*self.scheduledLoad.loc['load']})
 
     def makeSpotBid(self):
         # TODO check if this approach is ok
@@ -128,12 +112,9 @@ class DSM(FlexAgent):
 
     def flexMarketReward(self, time, qty, price):
         # Here negative of qty is used for reward because generation is negative qty
+        # TODO assumption that DSM has to pay to increase load correct?
         self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
         totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
             = self.dailyRewardTable.loc[:, 'reward_flex']
         self.updateReward(totalReward)
-
-    def loadingScenario(self):
-        # TODO define hourly loading of the the DSM
-        pass

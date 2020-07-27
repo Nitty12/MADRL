@@ -50,8 +50,6 @@ class FlexAgent:
                 Assumption: the time series data for PV and Wind contains -ve qty (generation)"""
         self.lowSpotBidLimit = 0
         self.highSpotBidLimit = 1
-        # TODO what in the case of PV if in spot reduced amount was bid? it can still generate energy, does not have
-        #  to reduce always in flex
         self.lowFlexBidLimit = -1
         self.highFlexBidLimit = 0
         self.lowPriceLimit = 1
@@ -77,9 +75,9 @@ class FlexAgent:
                                               'reward_spot': np.full(self.spotTimePeriod, 0, dtype=float),
                                               'reward_flex': np.full(self.spotTimePeriod, 0, dtype=float)})
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
-        self.spotBidMultiplier = np.ones(self.dailySpotTime)
-        self.flexBidMultiplier = np.ones(self.dailySpotTime)
-        self.flexBidPriceMultiplier = np.ones(self.dailySpotTime)
+        self.spotBidMultiplier = np.random.uniform(self.lowSpotBidLimit, self.highSpotBidLimit, size=self.dailySpotTime)
+        self.flexBidMultiplier = np.random.uniform(self.lowFlexBidLimit, self.highFlexBidLimit, size=self.dailySpotTime)
+        self.flexBidPriceMultiplier = np.random.uniform(self.lowPriceLimit, self.highPriceLimit, size=self.dailySpotTime)
         self.rewardCount = 0.0
         self.spotState = True
 

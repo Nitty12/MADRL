@@ -55,6 +55,7 @@ class DSO:
                 options = (impact.loc[:, congestedLine] < reqdFlexI_A[i]).values
                 if options.count(True) > 1:
                     """compare the price to decide"""
+                    # TODO minimum or maximum price depends upon whether DSO has to pay or gets money from flexagents
                     acceptedAgentID = self.bids[time].loc[options, 'price'].idxmin()
                     dispatchStatus.loc[time, acceptedAgentID] = True
                     self.bids[time].loc[acceptedAgentID, 'accepted'] = True

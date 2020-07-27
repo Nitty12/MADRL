@@ -44,10 +44,6 @@ class HeatPump(FlexAgent):
         self.spotChangedEnergy = 0
         self.flexChangedEnergy = 0
 
-        # TODO remove the random initialization later
-        self.spotBidMultiplier = np.random.uniform(0, 1, size=self.dailySpotTime)
-        self.flexBidMultiplier = np.random.uniform(0, 1, size=self.dailySpotTime)
-        self.flexBidPriceMultiplier = np.random.uniform(1, 5, size=self.dailySpotTime)
         self.energyTable = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
                                               'after_spot': np.full(self.spotTimePeriod, self.storageLevel,
                                                                     dtype=float),
