@@ -26,11 +26,11 @@ class Grid:
         self.sensitivity = None
         """contains the flexagent name connected to a particular node to get the sensitivity to use for 
         power flow approximation"""
-        self.nodeSensitivityDict = None
-        self.importGrid()
+        self.nodeSensitivityDict = {}
         self.day = 0
         self.dailyFlexTime = 24
         self.dailyTimes = None
+        self.importGrid()
         self.reset()
 
     def reset(self):
@@ -56,7 +56,7 @@ class Grid:
         self.data = self.data.assign(I_rated_A=ratedI)
 
         for name in self.data['Name']:
-            if name.startswith('Trafo'):
+            if name.startswith(('Trafo', 'Knoten')):
                 self.nodes.append(name)
             elif name.startswith('L'):
                 self.lines.append(name)
@@ -87,28 +87,28 @@ class Grid:
         loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
                                     encoding='unicode_escape', nrows=0)
         loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
-        columnNames = list(loadingSeriesColumns)
+        columnNames1 = list(loadingSeriesColumns)
         loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
                                     encoding='unicode_escape', dtype=float)
         loadingSeries.drop('NNF', axis=1, inplace=True)
-        loadingSeries.columns = columnNames
+        loadingSeries.columns = columnNames1
 
         datapath = os.path.join(path, "../inputs/ang_Kunden_HH2_nnf_corrected_1h.csv")
         loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
                                      encoding='unicode_escape', nrows=0)
         loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
-        columnNames = list(loadingSeriesColumns)
+        columnNames2 = list(loadingSeriesColumns)
         loadingSeries2 = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
                                      encoding='unicode_escape', dtype=float)
         loadingSeries2.drop('NNF', axis=1, inplace=True)
-        loadingSeries2.columns = columnNames
+        loadingSeries2.columns = columnNames2
         loadingSeries = pd.concat([loadingSeries, loadingSeries2], axis=1, sort=False)
         # TODO delete efficiently may be use multiprocess pool etc
         del loadingSeries2
 
         """get the list of nodes in which the household loads are connected"""
         nodes = []
-        for name in columnNames:
+        for name in columnNames1+columnNames2:
             n = re.search("(Standort_[0-9]+)", name)
             if not n.group() in nodes:
                 nodes.append(n.group())
@@ -119,32 +119,45 @@ class Grid:
         householdNodeDict = {}
         for node in nodes:
             householdNodeDict[node] = []
-            for name in columnNames:
+            for name in columnNames1+columnNames2:
                 match = re.search(rf".*{node}.*", name)
                 if match:
                     householdNodeDict[node].append(match.group())
             self.householdLoad[node] = loadingSeries.loc[:, householdNodeDict[node]].sum(axis=1)
 
     def loadSensitivityMatrix(self):
-        path = os.getcwd()
-        datapath = os.path.join(path, "../inputs/Sensitivities_Result_.csv")
-        self.sensitivity = None
-        self.sensitivity = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
-                                  encoding='unicode_escape')
-        self.sensitivity.rename(columns={'Unnamed: 0': 'Name'}, inplace=True)
-        self.sensitivity.drop('Unnamed: 1', axis=1, inplace=True)
-        self.sensitivity.set_index('Name', inplace=True)
-        self.sensitivity = self.sensitivity.apply(pd.to_numeric)
-        """gets the first flexagent name connected to a particular node to get the sensitivity to use for 
-                power flow approximation"""
         if not self.nodeSensitivityDict:
-            for node in self.householdLoad:
-                nodeNumber = node[9:]
-                for colName in self.sensitivity:
-                    match = re.search(rf"k{nodeNumber}[n,d].*", colName)
-                    if match:
-                        self.nodeSensitivityDict[node] = match.group()
-                        break
+            """walk through all the sensitivity matrices and concatenate as a single dataframe"""
+            path = os.getcwd()
+            datapath = os.path.join(path, "../inputs/sensitivity")
+            fileList = [os.path.join(root, file) for root, dirs, files in os.walk(datapath) for file in files if
+                        file.endswith('Sensitivities_Init_.csv')]
+            dfList = []
+            agentList = []
+            nodeSensitivityList = []
+            for file in fileList:
+                df = pd.read_csv(file, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+                                 encoding='unicode_escape')
+                df.rename(columns={'Unnamed: 0': 'Name', 'Unnamed: 1': 'time_step_15min'}, inplace=True)
+                df.drop('Unnamed: 6176', axis=1, inplace=True)
+                if not dfList:
+                    """gets the first flexagent name connected to a particular node to get the sensitivity to use for 
+                        power flow approximation"""
+                    for node in self.householdLoad:
+                        nodeNumber = node[9:]
+                        for colName in self.sensitivity:
+                            match = re.search(rf"k{nodeNumber}[n,d].*", colName)
+                            if match:
+                                self.nodeSensitivityDict[node] = match.group()
+                                nodeSensitivityList.append(match.group())
+                                break
+                    """only keep the required sensitivites"""
+                    for agent in self.flexAgents:
+                        agentList.append(agent.id)
+                df = df.filter(['time_step_15min'] + agentList + nodeSensitivityList)
+                dfList.append(df)
+            self.sensitivity = pd.concat(dfList, axis=0, ignore_index=True)
+            self.sensitivity.set_index('Name', inplace=True)
 
     def powerFlowApprox(self):
         # TODO change the pathname for the correct loading at each time
@@ -158,7 +171,7 @@ class Grid:
         """add the flex agent contribution to the lines"""
         for agent in self.flexAgents:
             sensitivityMat = self.sensitivity.loc[:, agent.id].to_numpy().reshape(-1, 1)
-            bidMat = agent.dailySpotBid.loc[: 'qty_bid'].to_numpy().reshape(-1, 1)
+            bidMat = agent.dailySpotBid.loc[:, 'qty_bid'].to_numpy().reshape(-1, 1)
             # TODO should I negate the sensitivityMat?
             self.loading.loc[:, :] += bidMat @ sensitivityMat.T
         # TODO set values in congestedLines and congestedNodes

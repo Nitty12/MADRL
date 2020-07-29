@@ -17,12 +17,13 @@ class REAgent(FlexAgent):
                 but, the possibility of increase is not considered because it can only increase congestion
                 so, flex bid limits are (-1 to 0)*spot dispatched qty
             """
-        self.reset(genSeries)
+        self.genSeries = genSeries
+        self.reset()
 
-    def reset(self, genSeries):
+    def reset(self):
         super().reset()
-        self.spotBid.loc[:, 'qty_bid'] = genSeries
-        self.flexBid.loc[:, 'qty_bid'] = genSeries
+        self.spotBid.loc[:, 'qty_bid'] = self.genSeries
+        self.flexBid.loc[:, 'qty_bid'] = self.genSeries
         self.flexBid.loc[:, 'price'] = np.full(self.flexTimePeriod, self.feedInPremium, dtype=float)
 
     def printInfo(self):

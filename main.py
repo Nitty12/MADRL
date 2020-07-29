@@ -35,10 +35,10 @@ def agentsInit():
     path = os.getcwd()
     datapath = os.path.join(path, "../inputs/RA_RD_Import_.csv")
     data = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False)
-    data = data.loc[1:, ['Name', 'Location', 'Un', 'min. P', 'max. P']]
-    data.columns = ['Name', 'Location', 'Un_kV', 'P_min_MW', 'P_max_MW']
+    data = data.loc[1:, ['Name', 'Location', 'Un']]
+    data.columns = ['Name', 'Location', 'Un_kV']
     data.reset_index(inplace=True, drop=True)
-    data[['Un_kV', 'P_min_MW', 'P_max_MW']] = data[['Un_kV', 'P_min_MW', 'P_max_MW']].apply(pd.to_numeric)
+    data['Un_kV'] = data['Un_kV'].apply(pd.to_numeric)
 
     loadingSeriesHP = getHPSeries()
     capacitySeriesEV, absenceSeriesEV = getEVSeries()
@@ -53,8 +53,8 @@ def agentsInit():
     windList = []
     homeStorageList = []
     DSMList =[]
-    heatPumpList = list(loadingSeriesHP)
-    EVList = list(capacitySeriesEV)
+    heatPumpList = []
+    EVList = []
     for name in data['Name']:
         if name.endswith(('_solar', '_nsPVErsatzeinsp')):
             PVList.append(name)
@@ -62,37 +62,47 @@ def agentsInit():
             windList.append(name)
         elif name.endswith('_nsHeimSpeicherErsatzeinsp'):
             homeStorageList.append(name)
-        elif name.endswith(('Gewerbe', 'Gewerbe_MS', 'Business Base', 'Business Base_MS', 'BusinessSamstag',
-                            'BusinessSamstag_MS', 'Einzelhandel','Einzelhandel_MS', 'Gastronomie', 'Gastronomie_MS',
-                            'BusinessPeak', 'BusinessPeak_MS')):
+        elif name.endswith('_nsWPErsatzlast_flex'):
+            heatPumpList.append(name)
+        elif name.endswith('_nsEmobErsatzLast_flex'):
+            EVList.append(name)
+        elif name.endswith(('Gewerbe_flex', 'Gewerbe_MS_flex', 'Business Base_flex', 'Business Base_MS_flex',
+                            'BusinessSamstag_flex','BusinessSamstag_MS_flex', 'Einzelhandel_flex',
+                            'Einzelhandel_MS_flex', 'Gastronomie_flex', 'Gastronomie_MS_flex',
+                            'BusinessPeak_flex', 'BusinessPeak_MS_flex')):
             DSMList.append(name)
 
     agentsDict = {}
     """negate the PV and Wind timeseries to make generation qty -ve"""
     for name in PVList[:1]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+        colName = genSeriesPV.filter(like=name).columns.values[0]
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, name])
+                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, colName])
     for name in windList[:1]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+        colName = genSeriesWind.filter(like=name).columns.values[0]
         agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, name])
+                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, colName])
     for name in homeStorageList[:1]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                       voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
     # for name in EVList[:2]:
-    #     agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, name],
-    #                                 absenceTimes=absenceSeriesEV.loc[:, name])
+    #   colName = capacitySeriesEV.filter(like=name).columns.values[0]
+    #     agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
+    #                                 absenceTimes=absenceSeriesEV.loc[:, colName])
     for name in heatPumpList[:1]:
         #TODO check if the latest RA_RD_Import_ file contains maxpower
-        agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, name].max(),5),
-                                    maxStorageLevel=10*round(loadingSeriesHP.loc[:, name].max(),5),
-                                    scheduledLoad=loadingSeriesHP.loc[:, name])
+        colName = loadingSeriesHP.filter(like=name).columns.values[0]
+        agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
+                                    maxStorageLevel=10*round(loadingSeriesHP.loc[:, colName].max(),5),
+                                    scheduledLoad=loadingSeriesHP.loc[:, colName])
     for name in DSMList[:1]:
         #TODO check if the latest RA_RD_Import_ file contains maxpower
-        agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesHP.loc[:, name].max(),5),
-                               scheduledLoad=loadingSeriesDSM.loc[:, name])
+        colName = loadingSeriesDSM.filter(like=name).columns.values[0]
+        agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
+                               scheduledLoad=loadingSeriesDSM.loc[:, colName])
     return agentsDict
 
 
@@ -124,6 +134,7 @@ def getHPSeries():
     # TODO check if there is this extra row in every HP series
     loadingSeries.drop(loadingSeries.index[8760], inplace=True)
     loadingSeries.reset_index(drop=True, inplace=True)
+    loadingSeries = editNames(loadingSeries)
     loadingSeries = loadingSeries.apply(pd.to_numeric)
     return loadingSeries
 
@@ -137,8 +148,19 @@ def getDSMSeries():
     loadingSeries.drop('NNF', axis=1, inplace=True)
     loadingSeries.drop(loadingSeries.index[0], inplace=True)
     loadingSeries.reset_index(drop=True, inplace=True)
+    loadingSeries = editNames(loadingSeries)
     loadingSeries = loadingSeries.apply(pd.to_numeric)
     return loadingSeries
+
+
+def editNames(loadingSeries):
+    if not loadingSeries.columns[0].endswith('_flex'):
+        colNames = []
+        for name in loadingSeries:
+            colNames.append(name+'_flex')
+        loadingSeries.columns = colNames
+    return loadingSeries
+
 
 def getGenSeries(relativePath):
     """get PV and wind generation timeseries"""
@@ -159,8 +181,9 @@ def getAgentDetails(data, name):
     details = data.loc[data['Name'] == name]
     loc = details['Location'].values[0]
     voltage_level = details['Un_kV'].values[0]
-    min_power = details['P_min_MW'].values[0]
-    max_power = details['P_max_MW'].values[0]
+    """no information on maximum and minimum power in the latest csv"""
+    min_power = 2
+    max_power = 2
     return loc, voltage_level, min_power, max_power
 
 

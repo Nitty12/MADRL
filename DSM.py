@@ -57,7 +57,7 @@ class DSM(FlexAgent):
             dailyBaseLoad + (dailyTotalLoad - dailyBaseLoad)*self.spotBidMultiplier
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
         # TODO is this approach or giving high penalty for qty changed in nonFlexTimes better?
-        self.dailySpotBid.loc[dailyNonFlexTimes, 'qty_bid'] = self.scheduledLoad.loc[self.scheduledLoad.isin
+        self.dailySpotBid.loc[dailyNonFlexTimes, 'qty_bid'] = self.scheduledLoad.loc[self.scheduledLoad['time'].isin
                                                                                      (self.dailyTimes), 'load']
 
     def spotMarketEnd(self):
