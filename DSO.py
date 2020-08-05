@@ -19,6 +19,7 @@ class DSO:
         # agents is a list of FlexAgents
         self.flexAgents.extend(agents)
         self.grid.flexAgents.extend(agents)
+        self.grid.importLoadsAndSensi()
         self.flexMarket.addParticipants(self.flexAgents)
 
     def askFlexibility(self):
