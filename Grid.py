@@ -13,6 +13,7 @@ class Grid:
         self.lines = []
         self.data = None
         self.loading = None
+        self.HVTrafoNode = None
         # self.congestedLines = None
         # self.congestedNodes = None
         self.reqdFlexTimes = None
@@ -154,8 +155,15 @@ class Grid:
                             nodeSensitivityList.append(match.group())
                             break
                 """only keep the required sensitivites"""
+                self.HVTrafoNode = self.data.loc[self.data['Name'] == 'Trafo_HSMS', 'Loc_from'].values[0]
                 for agent in self.flexAgents:
-                    agentList.append(agent.id)
+                    match = re.search(rf"k{self.HVTrafoNode[9:]}[n,d].*", agent.id)
+                    if match:
+                        self.nodeSensitivityDict[self.HVTrafoNode] = match.group()
+                        if match.group() not in nodeSensitivityList:
+                            nodeSensitivityList.append(match.group())
+                        break
+                agentList = [agent.id for agent in self.flexAgents if agent.id not in nodeSensitivityList]
             df = df.filter(['Name', 'time_step'] + agentList + nodeSensitivityList)
             """take only those lines present in the grid even if sensitivity matrix have extra"""
             df = df.loc[df['Name'].isin(self.data['Name']), :]
@@ -167,19 +175,31 @@ class Grid:
         self.loading = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), 0.0),
                                     columns=list(self.data.loc[:, 'Name']))
         for time in self.dailyTimes:
+            totalLoad = 0
+            totalGen = 0
             """add the household loads to the lines"""
             for node in self.householdLoad:
                 sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time+1,
                                                       self.nodeSensitivityDict[node]]
                 # TODO should I negate the sensitivityMat?
-                self.loading.loc[time, :] += sensitivity.values * self.householdLoad.loc[time, node]
+                load = self.householdLoad.loc[time, node]
+                self.loading.loc[time, :] += sensitivity.values * load
+                totalLoad += load
             """add the flex agent contribution to the lines"""
             for agent in self.flexAgents:
                 sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time+1,
                                                       agent.id]
                 # TODO should I negate the sensitivityMat?
-                self.loading.loc[time, :] += sensitivity.values * agent.dailySpotBid.loc[time, 'qty_bid']
-        # TODO calculate and include power flow from HV transformer
+                qty = agent.dailySpotBid.loc[time, 'qty_bid']
+                self.loading.loc[time, :] += sensitivity.values * qty
+                if qty >= 0:
+                    totalLoad += qty
+                else:
+                    totalGen += qty
+            """include remaining power flow from HV transformer"""
+            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
+                                               self.nodeSensitivityDict[self.HVTrafoNode]]
+            self.loading.loc[time, :] += sensitivity.values * (totalLoad - totalGen)
 
     def getStatus(self):
         return self.congestionStatus
