@@ -40,7 +40,6 @@ class LocalFlexMarketEnv(gym.Env):
 
         """ observation is 
                 hourly market clearing prices of 't-1' Day ahead market,
-                hourly load forecast of 't+1' day,
                 hourly dispatched power of the agent in 't-1' Day ahead market,
                 hourly dispatched power of the agent in 't-1' Flex market
                 spot or flex status
@@ -59,7 +58,7 @@ class LocalFlexMarketEnv(gym.Env):
                 self.action_space.append(total_action_space[0])
 
             agent_observation_space = spaces.Box(low=-np.inf, high=+np.inf,
-                                                 shape=(4*self.SpotMarket.dailySpotTime + 1, ), dtype=np.float32)
+                                                 shape=(3*self.SpotMarket.dailySpotTime + 1, ), dtype=np.float32)
             self.observation_space.append(agent_observation_space)
 
         """Convert to tuple for testing tf agents"""
@@ -119,8 +118,8 @@ class LocalFlexMarketEnv(gym.Env):
 
     # get observation for a particular agent
     def _get_obs(self, agent):
-        MCP, forecast, spotDispatch, flexDispatch, spotState = agent.getObservation()
-        return np.hstack((MCP, forecast, spotDispatch, flexDispatch, spotState))
+        MCP, spotDispatch, flexDispatch, spotState = agent.getObservation()
+        return np.hstack((MCP, spotDispatch, flexDispatch, spotState))
 
     # get dones for a particular agent
     def _get_done(self, agent):

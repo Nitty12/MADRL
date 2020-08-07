@@ -15,7 +15,7 @@ class EVehicle(FlexAgent):
     '''
 
     def __init__(self, id, location=[0, 0], maxPower = 0.0036, marginalCost = 0,
-                 maxCapacity = 0, efficiency = 1.0, absenceTimes=None):
+                 maxCapacity = 0, efficiency = 1.0, absenceTimes=None, consumption=None):
 
         super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
         self.type = "E-vehicle"
@@ -25,7 +25,8 @@ class EVehicle(FlexAgent):
         """in absence times, 1 indicates EV in use and 0 indicates EV in charging station"""
         self.absenceTimes = absenceTimes
         self.dailyAbsenceTimes = None
-        self.consumption = None
+        self.consumption = consumption
+        self.dailyConsumption = None
         self.remainingEnergy = None
         self.flexChangedEnergy = 0
         self.spotChangedEnergy = 0
@@ -79,9 +80,9 @@ class EVehicle(FlexAgent):
 
     def spotMarketEnd(self):
         spotDispatchedTimes, spotDispatchedQty = super().spotMarketEnd()
-        self.dailyAbsenceTimes = ast.literal_eval(self.absenceTimes.loc[self.day, :])
-        """convert dailyAbsenceTimes to 24 period if in 96 period"""
-        self.dailyAbsenceTimes = [time for i, time in enumerate(self.dailyAbsenceTimes) if i%4==0]
+        self.dailyAbsenceTimes = ast.literal_eval(self.absenceTimes.loc[self.day])
+        self.dailyConsumption = ast.literal_eval(self.consumption.loc[self.day])
+        self.convertToHourly()
         penalizeTimes, startingPenalty = self.checkPenalties(spotDispatchedTimes, spotDispatchedQty, 'after_spot')
         """change remaining energy to that of the starting time for this day to use in flex market"""
         self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot'].values[0]
@@ -89,9 +90,9 @@ class EVehicle(FlexAgent):
 
     def spotMarketReward(self, time, qty, penalizeTimes, startingPenalty):
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
-
+        qty = [q if not self.dailyAbsenceTimes[i] else 0 for i, q in enumerate(qty)]
         """Price of electricity bought: Here negative of qty is used for reward because generation is negative qty"""
-        self.dailyRewardTable.loc[time, 'reward_spot'] = self.dailySpotBid.loc[time, 'MCP'] * -qty[~self.dailyAbsenceTimes]
+        self.dailyRewardTable.loc[time, 'reward_spot'] = self.dailySpotBid.loc[time, 'MCP'] * -np.array(qty)
         """Penalizing agent if not fully charged before departure"""
         self.dailyRewardTable.loc[time[0], 'reward_spot'] += startingPenalty
         """Penalize to not charge during absent times"""
@@ -132,8 +133,9 @@ class EVehicle(FlexAgent):
         self.remainingEnergy = self.energyTable.loc[nextDayFirstTime, 'after_flex']
 
     def flexMarketReward(self, time, qty, price, penalizeTimes, startingPenalty):
+        qty = [q if not self.dailyAbsenceTimes[i] else 0 for i, q in enumerate(qty)]
         """Price of electricity bought: Here negative of qty is used for reward because generation is negative qty"""
-        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty[~self.dailyAbsenceTimes]
+        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -np.array(qty)
         """Penalizing agent if not fully charged before departure"""
         self.dailyRewardTable.loc[time[0], 'reward_flex'] += startingPenalty
         """Penalize to not offer flexibility during absent times"""
@@ -149,21 +151,13 @@ class EVehicle(FlexAgent):
         penalizeTimes = []
         """penalizing for not having enough charge while starting"""
         startingPenalty = 0
-
+        nStart = -1
         if status == 'after_spot':
             for time, qty, i in zip(DispatchedTimes.values, DispatchedQty.values, range(self.dailySpotTime)):
                 """if its dispatched in absent times, dont store the energy but penalize the agent"""
                 if self.dailyAbsenceTimes[i]:
-                    """to check if the EV is starting"""
-                    if not self.dailyAbsenceTimes[i-1] or i == 0:
-                        """check for sufficient charge in EV"""
-                        sufficient = self.checkSOC()
-                        if not sufficient:
-                            startingPenalty += self.penaltyViolation
-                    """Ev not connected to charging station, penalize to not charge during this time"""
-                    # TODO check if this or just making the bid as 0 works well
-                    penalizeTimes.append(time)
-                    # TODO take care of consumption during this time
+                    nStart, startingPenalty, penalizeTimes = self.starting(nStart, startingPenalty, penalizeTimes,
+                                                                           i, status, time)
                 else:
                     self.changeSOC(qty, self.spotTimeInterval, status, time+1)
 
@@ -180,16 +174,8 @@ class EVehicle(FlexAgent):
                     time, 'after_spot']
 
                 if self.dailyAbsenceTimes[i]:
-                    """to check if the EV is starting"""
-                    if not self.dailyAbsenceTimes[i - 1] or i == 0:
-                        """check for sufficient charge in EV"""
-                        sufficient = self.checkSOC()
-                        if not sufficient:
-                            startingPenalty += self.penaltyViolation
-                    """Ev not connected to charging station, penalize to not charge during this time"""
-                    # TODO check if this or just making the bid as 0 works well
-                    penalizeTimes.append(time)
-                    # TODO take care of consumption during this time
+                    nStart, startingPenalty, penalizeTimes = self.starting(nStart, startingPenalty, penalizeTimes,
+                                                                           i, status, time)
                 else:
                     if dispatched:
                         """negative qty of flex dispatch"""
@@ -206,3 +192,34 @@ class EVehicle(FlexAgent):
 
         return penalizeTimes, startingPenalty
 
+    def starting(self, nStart, startingPenalty, penalizeTimes, i, status, time):
+        """to check if the EV is starting"""
+        if not self.dailyAbsenceTimes[i - 1] or i == 0:
+            nStart += 1
+            """check for sufficient charge in EV"""
+            sufficient = self.checkSOC()
+            if not sufficient:
+                startingPenalty += self.penaltyViolation
+            """the consumption during entire trip"""
+            if self.dailyConsumption[nStart]:
+                self.changeSOC(self.dailyConsumption[nStart], self.spotTimeInterval, status, time + 1)
+        """Ev not connected to charging station, penalize to not charge during this time"""
+        # TODO check if this or just making the bid as 0 works well
+        penalizeTimes.append(time)
+        return nStart, startingPenalty, penalizeTimes
+
+    def convertToHourly(self):
+        """convert dailyAbsenceTimes to 24 period if in 96 period"""
+        # self.dailyAbsenceTimes = [time for i, time in enumerate(self.dailyAbsenceTimes) if i%4==0]
+        dailyAbsenceTimes =[]
+        absent = 0
+        for i, time in enumerate(self.dailyAbsenceTimes):
+            if (i+1) % 4 == 0:
+                if absent > 1:
+                    dailyAbsenceTimes.append(1)
+                else:
+                    dailyAbsenceTimes.append(0)
+                absent = 0
+            else:
+                absent += time
+        self.dailyAbsenceTimes = dailyAbsenceTimes

@@ -212,7 +212,6 @@ class FlexAgent:
         """returns the current observation of the environment:
             observation is
                 hourly market clearing prices of 't-1' Day ahead market,
-                hourly load forecast of 't+1' day,
                 hourly dispatched power of the agent in 't-1' Day ahead market,
                 hourly dispatched power of the agent in 't-1' Flex market,
                 spot or flex state
@@ -220,15 +219,11 @@ class FlexAgent:
         # TODO add reqd flex times?, add weekend vs weekdays?
         if self.day == 0:
             MCP = np.random.randint(15, 30, size=24)
-            forecast = np.full(self.dailySpotTime, 0)
             spotDispatch = np.full(self.dailySpotTime, 0)
             flexDispatch = np.full(self.dailySpotTime, 0)
         else:
             prevDayTimes = np.arange((self.day-1) * self.dailySpotTime, self.day * self.dailySpotTime)
             MCP = self.spotBid.loc[self.spotBid['time'].isin(prevDayTimes), 'MCP'].values
-
-            # TODO get forecast from somewhere
-            forecast = np.full(self.dailySpotTime, 0)
 
             spotDispatch = np.full(self.dailySpotTime, 0)
             flexDispatch = np.full(self.dailySpotTime, 0)
@@ -241,7 +236,7 @@ class FlexAgent:
             flexDispatch[dispatchedMask] = self.flexBid.loc[self.flexBid['time'].isin(prevDayTimes),
                                                             'qty_bid'][dispatchedMask].values
 
-        return MCP, forecast, spotDispatch, flexDispatch, int(self.spotState)
+        return MCP, spotDispatch, flexDispatch, int(self.spotState)
 
     def getReward(self):
         spotReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()

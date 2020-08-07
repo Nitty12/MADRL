@@ -226,7 +226,7 @@ class BatStorage(FlexAgent):
                 if possible:
                     self.changeSOC(qty, self.spotTimeInterval, status, time+1)
                 else:
-                    """If charging by a certain amount is not possible, change the bid to 0 and penalize the agent"""
+                    """If discharging by a certain amount is not possible, change the bid to 0 and penalize the agent"""
                     dailyBid.loc[time, 'qty_bid'] = 0
                     self.changeSOC(0, self.spotTimeInterval, status, time + 1)
                     if status == 'after_spot':
