@@ -43,13 +43,13 @@ def agentsInit():
     data.reset_index(inplace=True, drop=True)
     data['Un_kV'] = data['Un_kV'].apply(pd.to_numeric)
 
-    loadingSeriesHP = getHPSeries()
+    # loadingSeriesHP = getHPSeries()
     capacitySeriesEV, absenceSeriesEV, consumptionSeriesEV = getEVSeries()
-    relativePath = "../inputs/PV_Zeitreihe_nnf_1h.csv"
-    genSeriesPV = getGenSeries(relativePath)
-    relativePath = "../inputs/WEA_nnf_1h.csv"
-    genSeriesWind = getGenSeries(relativePath)
-    loadingSeriesDSM = getDSMSeries()
+    # relativePath = "../inputs/PV_Zeitreihe_nnf_1h.csv"
+    # genSeriesPV = getGenSeries(relativePath)
+    # relativePath = "../inputs/WEA_nnf_1h.csv"
+    # genSeriesWind = getGenSeries(relativePath)
+    # loadingSeriesDSM = getDSMSeries()
 
     """contains names of the respective agents"""
     PVList = []
@@ -77,36 +77,36 @@ def agentsInit():
 
     agentsDict = {}
     """negate the PV and Wind timeseries to make generation qty -ve"""
-    for name in PVList[:1]:
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        colName = genSeriesPV.filter(like=name).columns.values[0]
-        agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, colName])
-    for name in windList[:1]:
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        colName = genSeriesWind.filter(like=name).columns.values[0]
-        agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, colName])
-    for name in homeStorageList[:1]:
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                                      voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
-    for name in EVList[:2]:
+    # for name in PVList[:1]:
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     colName = genSeriesPV.filter(like=name).columns.values[0]
+    #     agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                            voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, colName])
+    # for name in windList[:1]:
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     colName = genSeriesWind.filter(like=name).columns.values[0]
+    #     agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                            voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, colName])
+    # for name in homeStorageList[:1]:
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                                   voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
+    for name in EVList[:1]:
         colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
         agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
                                     absenceTimes=absenceSeriesEV.loc[:, colName],
                                     consumption=consumptionSeriesEV.loc[:, colName])
-    for name in heatPumpList[:1]:
-        #TODO check if the latest RA_RD_Import_ file contains maxpower
-        colName = loadingSeriesHP.filter(like=name).columns.values[0]
-        agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
-                                    maxStorageLevel=10*round(loadingSeriesHP.loc[:, colName].max(),5),
-                                    scheduledLoad=loadingSeriesHP.loc[:, colName])
-    for name in DSMList[:1]:
-        #TODO check if the latest RA_RD_Import_ file contains maxpower
-        colName = loadingSeriesDSM.filter(like=name).columns.values[0]
-        agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
-                               scheduledLoad=loadingSeriesDSM.loc[:, colName])
+    # for name in heatPumpList[:1]:
+    #     #TODO check if the latest RA_RD_Import_ file contains maxpower
+    #     colName = loadingSeriesHP.filter(like=name).columns.values[0]
+    #     agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
+    #                                 maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
+    #                                 scheduledLoad=loadingSeriesHP.loc[:, colName])
+    # for name in DSMList[:1]:
+    #     #TODO check if the latest RA_RD_Import_ file contains maxpower
+    #     colName = loadingSeriesDSM.filter(like=name).columns.values[0]
+    #     agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
+    #                            scheduledLoad=loadingSeriesDSM.loc[:, colName])
     return agentsDict
 
 
@@ -364,5 +364,3 @@ plt.plot(steps, agent_returns)
 plt.ylabel('Average Return - Agent {}'.format(idx))
 plt.xlabel('Step')
 plt.show()
-
-# TODO change the yearly spotbids and flexbids to daily

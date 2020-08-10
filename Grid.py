@@ -16,7 +16,7 @@ class Grid:
         self.HVTrafoNode = None
         # self.congestedLines = None
         # self.congestedNodes = None
-        self.reqdFlexTimes = None
+        self.reqdFlexTimes = np.array([])
         self.flexAgents = []
         self.congestionStatus = None
         """contains the total load per node for the households"""
@@ -183,7 +183,7 @@ class Grid:
                                                       self.nodeSensitivityDict[node]]
                 # TODO should I negate the sensitivityMat?
                 load = self.householdLoad.loc[time, node]
-                self.loading.loc[time, :] += sensitivity.values * load
+                self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * load
                 totalLoad += load
             """add the flex agent contribution to the lines"""
             for agent in self.flexAgents:
@@ -191,7 +191,7 @@ class Grid:
                                                       agent.id]
                 # TODO should I negate the sensitivityMat?
                 qty = agent.dailySpotBid.loc[time, 'qty_bid']
-                self.loading.loc[time, :] += sensitivity.values * qty
+                self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * qty
                 if qty >= 0:
                     totalLoad += qty
                 else:
@@ -199,7 +199,7 @@ class Grid:
             """include remaining power flow from HV transformer"""
             sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
                                                self.nodeSensitivityDict[self.HVTrafoNode]]
-            self.loading.loc[time, :] += sensitivity.values * (totalLoad - totalGen)
+            self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * (totalLoad - totalGen)
 
     def getStatus(self):
         return self.congestionStatus

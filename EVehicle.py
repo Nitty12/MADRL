@@ -57,16 +57,21 @@ class EVehicle(FlexAgent):
     def changeSOC(self, qty, timeInterval, status, index):
         energy = qty*timeInterval
         if status == 'after_spot':
+            """if its greater than maxCapacity, cant store but has to pay for the electricity"""
             if not self.remainingEnergy + energy > self.maxCapacity:
                 self.remainingEnergy += energy
-                if not index == self.spotTimePeriod:
-                    self.energyTable.loc[index, status] = self.remainingEnergy
+            if not index == self.spotTimePeriod:
+                self.energyTable.loc[index, status] = self.remainingEnergy
+
         elif status == 'before_flex':
-            """energy will be negative"""
-            if not self.remainingEnergy + self.spotChangedEnergy + energy < self.minCapacity:
-                self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy + energy
-                if not index == self.spotTimePeriod:
-                    self.energyTable.loc[index, status] = self.remainingEnergy
+            if energy < 0:
+                if not self.remainingEnergy + self.spotChangedEnergy + energy < self.minCapacity:
+                    self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy + energy
+            else:
+                if not self.remainingEnergy + self.spotChangedEnergy + energy > self.maxCapacity:
+                    self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy + energy
+            if not index == self.spotTimePeriod:
+                self.energyTable.loc[index, status] = self.remainingEnergy
 
     def checkSOC(self):
         if self.remainingEnergy >= 0.8*self.maxCapacity:
@@ -110,41 +115,42 @@ class EVehicle(FlexAgent):
         super().makeFlexBid(reqdFlexTimes)
         for time, qty, i in zip(self.dailyFlexBid['time'].values,
                                 self.dailyFlexBid['qty_bid'].values, range(self.dailySpotTime)):
-            self.spotChangedEnergy = self.energyTable.loc[time + 1, 'after_spot'] - self.energyTable.loc[
-                time, 'after_spot']
+            self.spotChangedEnergy = self.energyTable.loc[time + 1, 'after_spot'] - \
+                                     self.energyTable.loc[time, 'after_spot']
             if self.dailyAbsenceTimes[i]:
-                pass
+                self.changeSOC(0, self.spotTimeInterval, 'before_flex', time + 1)
             else:
                 self.changeSOC(qty, self.spotTimeInterval, 'before_flex', time + 1)
 
     def flexMarketEnd(self):
         flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice = super().flexMarketEnd()
         """change remaining energy to that of the starting time for this day to update after_flex energy table"""
-        self.remainingEnergy = self.energyTable.loc[self.energyTable['time']==self.dailyTimes[0], 'after_spot'].values[0]
+        self.remainingEnergy = self.energyTable.loc[self.energyTable['time'] == self.dailyTimes[0], 'after_spot'].values[0]
         penalizeTimes, startingPenalty = self.checkPenalties(flexDispatchedTimes, flexDispatchedQty, 'after_flex')
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice, penalizeTimes, startingPenalty)
 
         """After flex market ends for a day, the final energy must be updated for all columns in energy table as it is 
                 the final realised energy after the day"""
         nextDayFirstTime = (self.day + 1) * self.dailySpotTime
-        self.energyTable.loc[nextDayFirstTime, ['before_spot', 'before_flex', 'after_flex']] = \
+        self.energyTable.loc[nextDayFirstTime, ['after_spot', 'before_flex', 'after_flex']] = \
             self.energyTable.loc[nextDayFirstTime, 'after_flex']
         """change remaining energy to that of the starting time for this day"""
         self.remainingEnergy = self.energyTable.loc[nextDayFirstTime, 'after_flex']
 
     def flexMarketReward(self, time, qty, price, penalizeTimes, startingPenalty):
-        qty = [q if not self.dailyAbsenceTimes[i] else 0 for i, q in enumerate(qty)]
-        """Price of electricity bought: Here negative of qty is used for reward because generation is negative qty"""
-        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -np.array(qty)
-        """Penalizing agent if not fully charged before departure"""
-        self.dailyRewardTable.loc[time[0], 'reward_flex'] += startingPenalty
-        """Penalize to not offer flexibility during absent times"""
-        self.dailyRewardTable.loc[penalizeTimes, 'reward_flex'] += self.penaltyViolation
+        if time.values:
+            qty = [q if not self.dailyAbsenceTimes[i] else 0 for i, q in enumerate(qty)]
+            """Price of electricity bought: Here negative of qty is used for reward because generation is negative qty"""
+            self.dailyRewardTable.loc[time, 'reward_flex'] = price * -np.array(qty)
+            """Penalizing agent if not fully charged before departure"""
+            self.dailyRewardTable.loc[time[0], 'reward_flex'] += startingPenalty
+            """Penalize to not offer flexibility during absent times"""
+            self.dailyRewardTable.loc[penalizeTimes, 'reward_flex'] += self.penaltyViolation
 
-        totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
-        self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
-            = self.dailyRewardTable.loc[:, 'reward_flex']
-        self.updateReward(totalReward)
+            totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
+            self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
+                = self.dailyRewardTable.loc[:, 'reward_flex']
+            self.updateReward(totalReward)
 
     def checkPenalties(self, DispatchedTimes, DispatchedQty, status):
         """penalizing to not charge at absent times"""

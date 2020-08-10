@@ -39,22 +39,6 @@ class SpotMarket:
         for participant in self.participants:
             self.bids[participant.getID()].loc[:, 'dispatched'] = True
 
-            # genState = self.bids[participant.getID()].loc[:, 'qty_bid'].values < 0
-            # if participant.type in ['PV Generation', 'Wind Generation']:
-            #     # Renewables are always dispatched
-            #     self.bids[participant.getID()].loc[:, 'dispatched'] = True
-            # else:
-            #     # bids lower than the MCP are accepted in spot market for generating agents
-            #     dispatchStatus = self.MCP.loc[self.MCP['time'].isin(self.dailyTimes), ['price']].values \
-            #                      >= participant.marginalCost
-            #     self.bids[participant.getID()].loc[genState, 'dispatched'] = dispatchStatus[genState]
-            #
-            #     # bids higher than the MCP are accepted in spot market for consumer agents
-            #     dispatchStatus = self.MCP.loc[self.MCP['time'].isin(self.dailyTimes),['price']].values \
-            #                      <= participant.marginalCost
-            #     self.bids[participant.getID()].loc[~genState, 'dispatched'] = dispatchStatus[~genState]
-
-            # save the market clearing prices in agents bids so they can calculate the rewards
             participant.dailySpotBid.loc[:, 'MCP'] = self.MCP['price']
             participant.spotMarketEnd()
 
