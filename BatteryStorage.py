@@ -203,7 +203,7 @@ class BatStorage(FlexAgent):
             self.energyTable.loc[self.energyTable['time'] == nextDayFirstTime, 'after_flex']
         self.remainingEnergy = self.energyTable.loc[self.energyTable['time'] == nextDayFirstTime, 'after_flex'].values[0]
         """keep the energy at the end of last day as the starting energy"""
-        self.energyTable.loc[0, :] = self.remainingEnergy
+        self.energyTable.loc[0,  ['after_spot', 'before_flex', 'after_flex']] = self.remainingEnergy
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice)
 
     def flexMarketReward(self, time, qty, price):

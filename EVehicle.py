@@ -26,6 +26,7 @@ class EVehicle(FlexAgent):
         self.absenceTimes = absenceTimes
         self.dailyAbsenceTimes = None
         self.consumption = consumption
+        self.energyTable = None
         self.dailyConsumption = None
         self.remainingEnergy = None
         self.flexChangedEnergy = 0
@@ -42,12 +43,12 @@ class EVehicle(FlexAgent):
         self.remainingEnergy = 0
         self.flexChangedEnergy = 0
         self.spotChangedEnergy = 0
-        self.energyTable = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                              'after_spot': np.full(self.spotTimePeriod, self.remainingEnergy,
+        self.energyTable = pd.DataFrame(data={'time': np.arange(self.dailySpotTime+1),
+                                              'after_spot': np.full(self.dailySpotTime+1, self.remainingEnergy,
                                                                      dtype=float),
-                                              'before_flex': np.full(self.flexTimePeriod, self.remainingEnergy,
+                                              'before_flex': np.full(self.dailySpotTime+1, self.remainingEnergy,
                                                                     dtype=float),
-                                              'after_flex': np.full(self.flexTimePeriod, self.remainingEnergy,
+                                              'after_flex': np.full(self.dailySpotTime+1, self.remainingEnergy,
                                                                     dtype=float)})
 
     def printInfo(self):
@@ -65,7 +66,7 @@ class EVehicle(FlexAgent):
                 if not self.remainingEnergy + energy > self.maxCapacity:
                     self.remainingEnergy += energy
             if not index == self.spotTimePeriod:
-                self.energyTable.loc[index, status] = self.remainingEnergy
+                self.energyTable.loc[self.energyTable['time'] == index, status] = self.remainingEnergy
 
         elif status == 'before_flex':
             if energy < 0:
@@ -75,7 +76,7 @@ class EVehicle(FlexAgent):
                 if not self.remainingEnergy + self.spotChangedEnergy + energy > self.maxCapacity:
                     self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy + energy
             if not index == self.spotTimePeriod:
-                self.energyTable.loc[index, status] = self.remainingEnergy
+                self.energyTable.loc[self.energyTable['time'] == index, status] = self.remainingEnergy
         elif status == 'after_flex':
             if energy < 0:
                 if not self.remainingEnergy + self.flexChangedEnergy < self.minCapacity:
@@ -84,7 +85,7 @@ class EVehicle(FlexAgent):
                 if not self.remainingEnergy + self.flexChangedEnergy > self.maxCapacity:
                     self.remainingEnergy = self.remainingEnergy + self.flexChangedEnergy
             if not index == self.spotTimePeriod:
-                self.energyTable.loc[index, status] = self.remainingEnergy
+                self.energyTable.loc[self.energyTable['time'] == index, status] = self.remainingEnergy
 
     def checkSOC(self):
         if self.remainingEnergy >= 0.8*self.maxCapacity:
@@ -95,6 +96,7 @@ class EVehicle(FlexAgent):
     def makeSpotBid(self):
         self.boundSpotBidMultiplier(low=self.lowSpotBidLimit, high=self.highSpotBidLimit)
         super().makeSpotBid()
+        self.energyTable.loc[:, 'time'] = np.concatenate([self.dailyTimes, np.array([self.dailyTimes[-1] + 1])])
 
     def spotMarketEnd(self):
         spotDispatchedTimes, spotDispatchedQty = super().spotMarketEnd()
@@ -128,8 +130,8 @@ class EVehicle(FlexAgent):
         super().makeFlexBid(reqdFlexTimes)
         for time, qty, i in zip(self.dailyFlexBid['time'].values,
                                 self.dailyFlexBid['qty_bid'].values, range(self.dailySpotTime)):
-            self.spotChangedEnergy = self.energyTable.loc[time + 1, 'after_spot'] - \
-                                     self.energyTable.loc[time, 'after_spot']
+            self.spotChangedEnergy = self.energyTable.loc[self.energyTable['time'] == time + 1, 'after_spot'].values[0] - \
+                                     self.energyTable.loc[self.energyTable['time'] == time, 'after_spot'].values[0]
             if self.dailyAbsenceTimes[i]:
                 self.changeSOC(0, self.spotTimeInterval, 'before_flex', time + 1)
             else:
@@ -145,10 +147,12 @@ class EVehicle(FlexAgent):
         """After flex market ends for a day, the final energy must be updated for all columns in energy table as it is 
                 the final realised energy after the day"""
         nextDayFirstTime = (self.day + 1) * self.dailySpotTime
-        self.energyTable.loc[nextDayFirstTime, ['after_spot', 'before_flex', 'after_flex']] = \
-            self.energyTable.loc[nextDayFirstTime, 'after_flex']
+        self.energyTable.loc[self.energyTable['time'] == nextDayFirstTime, ['after_spot', 'before_flex']] = \
+            self.energyTable.loc[self.energyTable['time'] == nextDayFirstTime, 'after_flex']
+        """keep the energy at the end of last day as the starting energy"""
+        self.energyTable.loc[0, ['after_spot', 'before_flex', 'after_flex']] = self.remainingEnergy
         """change remaining energy to that of the starting time for this day"""
-        self.remainingEnergy = self.energyTable.loc[nextDayFirstTime, 'after_flex']
+        self.remainingEnergy = self.energyTable.loc[self.energyTable['time'] == nextDayFirstTime, 'after_flex'].values[0]
 
     def flexMarketReward(self, time, qty, price, penalizeTimes, startingPenalty):
         if time.values:
@@ -173,8 +177,6 @@ class EVehicle(FlexAgent):
         nStart = -1
         if status == 'after_spot':
             for time, qty, i in zip(DispatchedTimes.values, DispatchedQty.values, range(self.dailySpotTime)):
-                # if time == 1285:
-                #     print(time)
                 """if its dispatched in absent times, dont store the energy but penalize the agent"""
                 if self.dailyAbsenceTimes[i]:
                     nStart, startingPenalty, penalizeTimes = self.starting(nStart, startingPenalty, penalizeTimes,
@@ -189,10 +191,10 @@ class EVehicle(FlexAgent):
                                              range(self.dailySpotTime)):
                 """amount of energy changed in the spot and flex dispatch used to update the energy table for after_flex 
                 times """
-                self.flexChangedEnergy = self.energyTable.loc[time + 1, 'before_flex'] - self.energyTable.loc[
-                    time, 'before_flex']
-                self.spotChangedEnergy = self.energyTable.loc[time + 1, 'after_spot'] - self.energyTable.loc[
-                    time, 'after_spot']
+                self.flexChangedEnergy = self.energyTable.loc[self.energyTable['time'] == time + 1, 'before_flex'].values[0] \
+                                         - self.energyTable.loc[self.energyTable['time'] == time, 'before_flex'].values[0]
+                self.spotChangedEnergy = self.energyTable.loc[self.energyTable['time'] == time + 1, 'after_spot'].values[0] \
+                                         - self.energyTable.loc[self.energyTable['time'] == time, 'after_spot'].values[0]
 
                 if self.dailyAbsenceTimes[i]:
                     nStart, startingPenalty, penalizeTimes = self.starting(nStart, startingPenalty, penalizeTimes,
@@ -203,13 +205,13 @@ class EVehicle(FlexAgent):
                         if not self.remainingEnergy + self.flexChangedEnergy < self.minCapacity:
                             self.remainingEnergy = self.remainingEnergy + self.flexChangedEnergy
                         if not time == self.spotTimePeriod:
-                            self.energyTable.loc[time+1, status] = self.remainingEnergy
+                            self.energyTable.loc[self.energyTable['time'] == time+1, status] = self.remainingEnergy
                     else:
                         """positive qty of spot dispatch"""
                         if not self.remainingEnergy + self.spotChangedEnergy > self.maxCapacity:
                             self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy
                         if not time == self.spotTimePeriod:
-                            self.energyTable.loc[time+1, status] = self.remainingEnergy
+                            self.energyTable.loc[self.energyTable['time'] == time+1, status] = self.remainingEnergy
 
         return penalizeTimes, startingPenalty
 
