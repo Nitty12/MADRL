@@ -57,9 +57,13 @@ class EVehicle(FlexAgent):
     def changeSOC(self, qty, timeInterval, status, index):
         energy = qty*timeInterval
         if status == 'after_spot':
-            """if its greater than maxCapacity, cant store but has to pay for the electricity"""
-            if not self.remainingEnergy + energy > self.maxCapacity:
-                self.remainingEnergy += energy
+            if energy < 0:
+                if not self.remainingEnergy + energy < self.minCapacity:
+                    self.remainingEnergy += energy
+            else:
+                """if its greater than maxCapacity, cant store but has to pay for the electricity"""
+                if not self.remainingEnergy + energy > self.maxCapacity:
+                    self.remainingEnergy += energy
             if not index == self.spotTimePeriod:
                 self.energyTable.loc[index, status] = self.remainingEnergy
 
@@ -70,6 +74,15 @@ class EVehicle(FlexAgent):
             else:
                 if not self.remainingEnergy + self.spotChangedEnergy + energy > self.maxCapacity:
                     self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy + energy
+            if not index == self.spotTimePeriod:
+                self.energyTable.loc[index, status] = self.remainingEnergy
+        elif status == 'after_flex':
+            if energy < 0:
+                if not self.remainingEnergy + self.flexChangedEnergy < self.minCapacity:
+                    self.remainingEnergy = self.remainingEnergy + self.flexChangedEnergy
+            else:
+                if not self.remainingEnergy + self.flexChangedEnergy > self.maxCapacity:
+                    self.remainingEnergy = self.remainingEnergy + self.flexChangedEnergy
             if not index == self.spotTimePeriod:
                 self.energyTable.loc[index, status] = self.remainingEnergy
 
@@ -160,10 +173,12 @@ class EVehicle(FlexAgent):
         nStart = -1
         if status == 'after_spot':
             for time, qty, i in zip(DispatchedTimes.values, DispatchedQty.values, range(self.dailySpotTime)):
+                # if time == 1285:
+                #     print(time)
                 """if its dispatched in absent times, dont store the energy but penalize the agent"""
                 if self.dailyAbsenceTimes[i]:
                     nStart, startingPenalty, penalizeTimes = self.starting(nStart, startingPenalty, penalizeTimes,
-                                                                           i, status, time)
+                                                                           qty, i, status, time)
                 else:
                     self.changeSOC(qty, self.spotTimeInterval, status, time+1)
 
@@ -181,37 +196,44 @@ class EVehicle(FlexAgent):
 
                 if self.dailyAbsenceTimes[i]:
                     nStart, startingPenalty, penalizeTimes = self.starting(nStart, startingPenalty, penalizeTimes,
-                                                                           i, status, time)
+                                                                           qty, i, status, time)
                 else:
                     if dispatched:
                         """negative qty of flex dispatch"""
                         if not self.remainingEnergy + self.flexChangedEnergy < self.minCapacity:
                             self.remainingEnergy = self.remainingEnergy + self.flexChangedEnergy
-                            if not time == self.spotTimePeriod:
-                                self.energyTable.loc[time+1, status] = self.remainingEnergy
+                        if not time == self.spotTimePeriod:
+                            self.energyTable.loc[time+1, status] = self.remainingEnergy
                     else:
                         """positive qty of spot dispatch"""
                         if not self.remainingEnergy + self.spotChangedEnergy > self.maxCapacity:
                             self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy
-                            if not time == self.spotTimePeriod:
-                                self.energyTable.loc[time+1, status] = self.remainingEnergy
+                        if not time == self.spotTimePeriod:
+                            self.energyTable.loc[time+1, status] = self.remainingEnergy
 
         return penalizeTimes, startingPenalty
 
-    def starting(self, nStart, startingPenalty, penalizeTimes, i, status, time):
+    def starting(self, nStart, startingPenalty, penalizeTimes, qty, i, status, time):
         """to check if the EV is starting"""
         if not self.dailyAbsenceTimes[i - 1] or i == 0:
+            """EV is starting now"""
             nStart += 1
             """check for sufficient charge in EV"""
             sufficient = self.checkSOC()
             if not sufficient:
                 startingPenalty += self.penaltyViolation
             """the consumption during entire trip"""
-            if self.dailyConsumption[nStart]:
-                self.changeSOC(self.dailyConsumption[nStart], self.spotTimeInterval, status, time + 1)
+            if nStart < len(self.dailyConsumption):
+                """data has sometimes less consumption values than the number of starts"""
+                self.changeSOC(-self.dailyConsumption[nStart], self.spotTimeInterval, status, time + 1)
+            else:
+                self.changeSOC(0, self.spotTimeInterval, status, time + 1)
+        else:
+            self.changeSOC(0, self.spotTimeInterval, status, time + 1)
         """Ev not connected to charging station, penalize to not charge during this time"""
-        # TODO check if this or just making the bid as 0 works well
-        penalizeTimes.append(time)
+        if not qty == 0:
+            # TODO check if this or just making the bid as 0 works well
+            penalizeTimes.append(time)
         return nStart, startingPenalty, penalizeTimes
 
     def convertToHourly(self):
