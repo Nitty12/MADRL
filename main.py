@@ -25,7 +25,7 @@ import os
 import time
 
 st = time.time()
-
+#%%
 # TODO why it is not reproducible even though np is seeded?
 np.random.seed(0)
 tf.random.set_seed(0)
@@ -47,7 +47,7 @@ def agentsInit():
     data['Un_kV'] = data['Un_kV'].apply(pd.to_numeric)
 
     loadingSeriesHP = getHPSeries()
-    capacitySeriesEV, absenceSeriesEV, consumptionSeriesEV = getEVSeries()
+    chargingSeriesEV, capacitySeriesEV, absenceSeriesEV, consumptionSeriesEV = getEVSeries()
     relativePath = "../inputs/PV_Zeitreihe_nnf_1h.csv"
     genSeriesPV = getGenSeries(relativePath)
     relativePath = "../inputs/WEA_nnf_1h.csv"
@@ -79,43 +79,53 @@ def agentsInit():
             DSMList.append(name)
 
     agentsDict = {}
+    """the number of agents in each type to consider as flexibility"""
+    numAgents = 1
     """negate the PV and Wind timeseries to make generation qty -ve"""
-    for name in PVList[:1]:
+    for name in PVList[:numAgents]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesPV.filter(like=name).columns.values[0]
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, colName])
-    for name in windList[:1]:
+    for name in windList[:numAgents]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesWind.filter(like=name).columns.values[0]
         agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, colName])
-    for name in homeStorageList[:1]:
+    for name in homeStorageList[:numAgents]:
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                       voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
-    for name in EVList[:1]:
+    for name in EVList[:numAgents]:
         colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
         agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
                                     absenceTimes=absenceSeriesEV.loc[:, colName],
                                     consumption=consumptionSeriesEV.loc[:, colName])
-    for name in heatPumpList[:1]:
+    for name in heatPumpList[:numAgents]:
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesHP.filter(like=name).columns.values[0]
         agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
                                     maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
                                     scheduledLoad=loadingSeriesHP.loc[:, colName])
-    for name in DSMList[:1]:
+    for name in DSMList[:numAgents]:
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesDSM.filter(like=name).columns.values[0]
         agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
                                scheduledLoad=loadingSeriesDSM.loc[:, colName])
-    return agentsDict
+    return agentsDict, numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM
 
 
 def getEVSeries():
-    """EV capacity timeseries"""
+
     path = os.getcwd()
+    """EV timeseries"""
+    datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_nnf_1h.csv")
+    chargingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                 encoding='unicode_escape')
+    chargingSeries.drop('Unnamed: 0', axis=1, inplace=True)
+    chargingSeries = chargingSeries.apply(pd.to_numeric)
+
+    """EV capacity timeseries"""
     datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_capacity.csv")
     capacitySeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
                                  encoding='unicode_escape')
@@ -134,7 +144,7 @@ def getEVSeries():
     consumptionSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
                                     encoding='unicode_escape')
     consumptionSeries.drop('Unnamed: 0', axis=1, inplace=True)
-    return capacitySeries, absenceSeries, consumptionSeries
+    return chargingSeries, capacitySeries, absenceSeries, consumptionSeries
 
 def getHPSeries():
     """Heat pump loading timeseries"""
@@ -201,8 +211,8 @@ def getAgentDetails(data, name):
     return loc, voltage_level, min_power, max_power
 
 
-def gridInit():
-    grid = Grid()
+def gridInit(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM):
+    grid = Grid(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM)
     return grid
 
 
@@ -271,8 +281,9 @@ def get_target_and_main_actions(experience):
            tuple(total_agents_target_actions), tuple(total_agents_main_actions)
 
 
-agentsDict = agentsInit()
-grid = gridInit()
+#%%
+agentsDict, numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM = agentsInit()
+grid = gridInit(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM)
 
 sm = SpotMarket()
 agentsList = [obj for name, obj in agentsDict.items()]

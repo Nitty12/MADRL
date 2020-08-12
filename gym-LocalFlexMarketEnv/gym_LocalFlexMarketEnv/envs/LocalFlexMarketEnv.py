@@ -159,11 +159,11 @@ class LocalFlexMarketEnv(gym.Env):
         self.SpotMarket.sendDispatch()
 
     def flexStep(self):
-        self.DSO.askFlexibility()
-        self.DSO.optFlex()
-        # if self.DSO.checkCongestion():
-        #     self.DSO.askFlexibility()
-        #     self.DSO.optFlex()
+        # self.DSO.askFlexibility()
+        # self.DSO.optFlex()
+        if self.DSO.checkCongestion():
+            self.DSO.askFlexibility()
+            self.DSO.optFlex()
         self.DSO.endDay()
         self.SpotMarket.endDay()
 

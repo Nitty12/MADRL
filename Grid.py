@@ -5,7 +5,15 @@ import re
 
 
 class Grid:
-    def __init__(self, TimePeriod=8760, numNodes=0, numLines=0):
+    def __init__(self,numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
+                 TimePeriod=8760, numNodes=0, numLines=0):
+        """the number of agents in each type to consider as flexibility"""
+        self.numAgents = numAgents
+        self.loadingSeriesHP = loadingSeriesHP
+        self.chargingSeriesEV = chargingSeriesEV
+        self.genSeriesPV = genSeriesPV
+        self.genSeriesWind = genSeriesWind
+        self.loadingSeriesDSM = loadingSeriesDSM
         self.TimePeriod = TimePeriod
         self.numNodes = numNodes
         self.numLines = numLines
@@ -20,9 +28,9 @@ class Grid:
         self.flexAgents = []
         self.congestionStatus = None
         """contains the total load per node for the households"""
-        self.householdLoad = None
+        self.loadsAndGens = None
         """contains the list of households in each node"""
-        self.householdNodeDict = None
+        self.nodeDict = None
         """contains the sensitivity matrix with index as trafo/lines and columns as flexagents"""
         self.sensitivity = None
         """contains the flexagent name connected to a particular node to get the sensitivity to use for 
@@ -71,7 +79,7 @@ class Grid:
 
     def importLoadsAndSensi(self):
         """get the household load data from the CSV"""
-        self.getHouseholdLoad()
+        self.getLoadsAndGens()
         """load the sensitivity matrix and concatenate"""
         self.loadSensitivityMatrix()
 
@@ -85,49 +93,58 @@ class Grid:
         else:
             return False
 
-    def getHouseholdLoad(self):
+    def getLoadsAndGens(self):
         path = os.getcwd()
+        """reading household loads"""
         datapath = os.path.join(path, "../inputs/ang_Kunden_HH1_nnf_corrected_1h.csv")
         loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
                                     encoding='unicode_escape', nrows=0)
         loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
-        columnNames1 = list(loadingSeriesColumns)
-        loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+        columnNamesHH1 = list(loadingSeriesColumns)
+        loadingSeriesHH = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
                                     encoding='unicode_escape', dtype=float)
-        loadingSeries.drop('NNF', axis=1, inplace=True)
-        loadingSeries.columns = columnNames1
+        loadingSeriesHH.drop('NNF', axis=1, inplace=True)
+        loadingSeriesHH.columns = columnNamesHH1
 
         datapath = os.path.join(path, "../inputs/ang_Kunden_HH2_nnf_corrected_1h.csv")
         loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
                                      encoding='unicode_escape', nrows=0)
         loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
-        columnNames2 = list(loadingSeriesColumns)
-        loadingSeries2 = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+        columnNamesHH2 = list(loadingSeriesColumns)
+        loadingSeriesHH2 = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
                                      encoding='unicode_escape', dtype=float)
-        loadingSeries2.drop('NNF', axis=1, inplace=True)
-        loadingSeries2.columns = columnNames2
-        loadingSeries = pd.concat([loadingSeries, loadingSeries2], axis=1, sort=False)
+        loadingSeriesHH2.drop('NNF', axis=1, inplace=True)
+        loadingSeriesHH2.columns = columnNamesHH2
+        loadingSeriesHH = pd.concat([loadingSeriesHH, loadingSeriesHH2], axis=1, sort=False)
         # TODO delete efficiently may be use multiprocess pool etc
-        del loadingSeries2
+        del loadingSeriesHH2
 
-        """get the list of nodes in which the household loads are connected"""
+        columnNames = columnNamesHH1 + columnNamesHH2 + list(self.loadingSeriesHP.columns) + list(self.chargingSeriesEV.columns) \
+                      + list(self.loadingSeriesDSM.columns) + list(self.genSeriesPV.columns) + list(self.genSeriesWind.columns)
+
+        """get the list of nodes in which the loads and generations are connected"""
         nodes = []
-        for name in columnNames1+columnNames2:
+        for name in columnNames:
             n = re.search("(Standort_[0-9]+)", name)
             if not n.group() in nodes:
                 nodes.append(n.group())
 
-        """get the list of households in each node
-            add the loads of houses connected to the same node and only store the result"""
-        self.householdLoad = pd.DataFrame(columns=nodes)
-        householdNodeDict = {}
+        """get the list of loads and gens in each node
+            and combine these for the same node and only store the result"""
+        self.loadsAndGens = pd.DataFrame(columns=nodes)
+        nodeDict = {}
         for node in nodes:
-            householdNodeDict[node] = []
-            for name in columnNames1+columnNames2:
+            nodeDict[node] = []
+            for name in columnNames:
                 match = re.search(rf".*{node}.*", name)
                 if match:
-                    householdNodeDict[node].append(match.group())
-            self.householdLoad[node] = loadingSeries.loc[:, householdNodeDict[node]].sum(axis=1)
+                    nodeDict[node].append(match.group())
+            self.loadsAndGens[node] = loadingSeriesHH.loc[:, loadingSeriesHH.columns.isin(nodeDict[node])].sum(axis=1) + \
+                                      self.loadingSeriesHP.loc[:, self.loadingSeriesHP.columns.isin(nodeDict[node])].sum(axis=1) + \
+                                      self.chargingSeriesEV.loc[:, self.chargingSeriesEV.columns.isin(nodeDict[node])].sum(axis=1) + \
+                                      self.loadingSeriesDSM.loc[:, self.loadingSeriesDSM.columns.isin(nodeDict[node])].sum(axis=1) + \
+                                      self.genSeriesPV.loc[:, self.genSeriesPV.columns.isin(nodeDict[node])].sum(axis=1) + \
+                                      self.genSeriesWind.loc[:, self.genSeriesWind.columns.isin(nodeDict[node])].sum(axis=1)
 
     def loadSensitivityMatrix(self):
         """walk through all the sensitivity matrices and concatenate as a single dataframe"""
@@ -146,10 +163,10 @@ class Grid:
             if not dfList:
                 """gets the first flexagent name connected to a particular node to get the sensitivity to use for 
                     power flow approximation"""
-                for node in self.householdLoad:
+                for node in self.loadsAndGens:
                     nodeNumber = node[9:]
                     for colName in df:
-                        match = re.search(rf"k{nodeNumber}[n,d].*", colName)
+                        match = re.search(rf"k{nodeNumber}[n,d,l].*", colName)
                         if match:
                             self.nodeSensitivityDict[node] = match.group()
                             nodeSensitivityList.append(match.group())
@@ -157,7 +174,7 @@ class Grid:
                 """only keep the required sensitivites"""
                 self.HVTrafoNode = self.data.loc[self.data['Name'] == 'Trafo_HSMS', 'Loc_from'].values[0]
                 for agent in self.flexAgents:
-                    match = re.search(rf"k{self.HVTrafoNode[9:]}[n,d].*", agent.id)
+                    match = re.search(rf"k{self.HVTrafoNode[9:]}[n,d,l].*", agent.id)
                     if match:
                         self.nodeSensitivityDict[self.HVTrafoNode] = match.group()
                         if match.group() not in nodeSensitivityList:
@@ -177,14 +194,17 @@ class Grid:
         for time in self.dailyTimes:
             totalLoad = 0
             totalGen = 0
-            """add the household loads to the lines"""
-            for node in self.householdLoad:
+            """add the contribution from households and other static agents to the lines"""
+            for node in self.loadsAndGens:
                 sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time+1,
                                                       self.nodeSensitivityDict[node]]
                 # TODO should I negate the sensitivityMat?
-                load = self.householdLoad.loc[time, node]
-                self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * load
-                totalLoad += load
+                qty = self.loadsAndGens.loc[time, node]
+                self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * qty
+                if qty >= 0:
+                    totalLoad += qty
+                else:
+                    totalGen += qty
             """add the flex agent contribution to the lines"""
             for agent in self.flexAgents:
                 sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time+1,
