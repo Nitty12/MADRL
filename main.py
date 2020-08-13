@@ -23,6 +23,7 @@ from tf_agents.utils import common
 from tf_agents.environments import suite_gym
 import os
 import time
+import re
 
 st = time.time()
 #%%
@@ -40,8 +41,8 @@ print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('
 def agentsInit():
     path = os.getcwd()
     datapath = os.path.join(path, "../inputs/RA_RD_Import_.csv")
-    data = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False)
-    data = data.loc[1:, ['Name', 'Location', 'Un']]
+    data = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0,
+                       usecols=['Name', 'Location', 'Un'], error_bad_lines=False)
     data.columns = ['Name', 'Location', 'Un_kV']
     data.reset_index(inplace=True, drop=True)
     data['Un_kV'] = data['Un_kV'].apply(pd.to_numeric)
@@ -55,59 +56,47 @@ def agentsInit():
     loadingSeriesDSM = getDSMSeries()
 
     """contains names of the respective agents"""
-    PVList = []
-    windList = []
     homeStorageList = []
-    DSMList =[]
-    heatPumpList = []
-    EVList = []
     for name in data['Name']:
-        if name.endswith(('_solar', '_nsPVErsatzeinsp')):
-            PVList.append(name)
-        elif name.endswith('_wea'):
-            windList.append(name)
-        elif name.endswith('_nsHeimSpeicherErsatzeinsp'):
+        if name.endswith('_nsHeimSpeicherErsatzeinsp'):
             homeStorageList.append(name)
-        elif name.endswith('_nsWPErsatzlast_flex'):
-            heatPumpList.append(name)
-        elif name.endswith('_nsEmobErsatzLast_flex'):
-            EVList.append(name)
-        elif name.endswith(('Gewerbe_flex', 'Gewerbe_MS_flex', 'Business Base_flex', 'Business Base_MS_flex',
-                            'BusinessSamstag_flex','BusinessSamstag_MS_flex', 'Einzelhandel_flex',
-                            'Einzelhandel_MS_flex', 'Gastronomie_flex', 'Gastronomie_MS_flex',
-                            'BusinessPeak_flex', 'BusinessPeak_MS_flex')):
-            DSMList.append(name)
 
     agentsDict = {}
     """the number of agents in each type to consider as flexibility"""
     numAgents = 1
     """negate the PV and Wind timeseries to make generation qty -ve"""
-    for name in PVList[:numAgents]:
+    for name in genSeriesPV.columns[:numAgents]:
+        name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesPV.filter(like=name).columns.values[0]
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesPV.loc[:, colName])
-    for name in windList[:numAgents]:
+                               voltageLevel=voltage_level, marginalCost=0, genSeries=genSeriesPV.loc[:, colName])
+    for name in genSeriesWind.columns[:numAgents]:
+        name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesWind.filter(like=name).columns.values[0]
         agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=-genSeriesWind.loc[:, colName])
+                               voltageLevel=voltage_level, marginalCost=0, genSeries=genSeriesWind.loc[:, colName])
     for name in homeStorageList[:numAgents]:
+        name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                       voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
-    for name in EVList[:numAgents]:
+    for name in chargingSeriesEV.columns[:numAgents]:
+        name = re.search('k.*', name).group(0)
         colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
         agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
                                     absenceTimes=absenceSeriesEV.loc[:, colName],
                                     consumption=consumptionSeriesEV.loc[:, colName])
-    for name in heatPumpList[:numAgents]:
+    for name in loadingSeriesHP.columns[:numAgents]:
+        name = re.search('k.*', name).group(0)
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesHP.filter(like=name).columns.values[0]
         agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
                                     maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
                                     scheduledLoad=loadingSeriesHP.loc[:, colName])
-    for name in DSMList[:numAgents]:
+    for name in loadingSeriesDSM.columns[:numAgents]:
+        name = re.search('k.*', name).group(0)
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesDSM.filter(like=name).columns.values[0]
         agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
@@ -198,7 +187,8 @@ def getGenSeries(relativePath):
                             encoding='unicode_escape', dtype=float)
     genSeries.drop('NNF', axis=1, inplace=True)
     genSeries.columns = columnNames
-    return genSeries
+    """converting to negative value for generation"""
+    return -genSeries
 
 
 def getAgentDetails(data, name):

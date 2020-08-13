@@ -119,8 +119,12 @@ class Grid:
         # TODO delete efficiently may be use multiprocess pool etc
         del loadingSeriesHH2
 
-        columnNames = columnNamesHH1 + columnNamesHH2 + list(self.loadingSeriesHP.columns) + list(self.chargingSeriesEV.columns) \
-                      + list(self.loadingSeriesDSM.columns) + list(self.genSeriesPV.columns) + list(self.genSeriesWind.columns)
+        columnNames = columnNamesHH1 + columnNamesHH2 + \
+                      list(self.loadingSeriesHP.columns[self.numAgents:]) + \
+                      list(self.chargingSeriesEV.columns[self.numAgents:]) + \
+                      list(self.loadingSeriesDSM.columns[self.numAgents:]) + \
+                      list(self.genSeriesPV.columns[self.numAgents:]) + \
+                      list(self.genSeriesWind.columns[self.numAgents:])
 
         """get the list of nodes in which the loads and generations are connected"""
         nodes = []
@@ -180,7 +184,14 @@ class Grid:
                         if match.group() not in nodeSensitivityList:
                             nodeSensitivityList.append(match.group())
                         break
-                agentList = [agent.id for agent in self.flexAgents if agent.id not in nodeSensitivityList]
+                """check if the node is already present in the dictionary, else add the agent to the sensitivity matrix"""
+                agentList = []
+                for agent in self.flexAgents:
+                    agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agent.id).group(1)
+                    if not agentNode in self.nodeSensitivityDict:
+                        agentList.append(agent.id)
+                        self.nodeSensitivityDict[agentNode] = agent.id
+
             df = df.filter(['Name', 'time_step'] + agentList + nodeSensitivityList)
             """take only those lines present in the grid even if sensitivity matrix have extra"""
             df = df.loc[df['Name'].isin(self.data['Name']), :]
@@ -207,8 +218,9 @@ class Grid:
                     totalGen += qty
             """add the flex agent contribution to the lines"""
             for agent in self.flexAgents:
+                agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]" , agent.id).group(1)
                 sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time+1,
-                                                      agent.id]
+                                                      self.nodeSensitivityDict[agentNode]]
                 # TODO should I negate the sensitivityMat?
                 qty = agent.dailySpotBid.loc[time, 'qty_bid']
                 self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * qty
@@ -217,9 +229,10 @@ class Grid:
                 else:
                     totalGen += qty
             """include remaining power flow from HV transformer"""
+            print(totalLoad, totalGen)
             sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
                                                self.nodeSensitivityDict[self.HVTrafoNode]]
-            self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * (totalLoad - totalGen)
+            self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * (totalLoad + totalGen)
 
     def getStatus(self):
         return self.congestionStatus
