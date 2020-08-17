@@ -86,7 +86,7 @@ class Grid:
     def isCongested(self):
         self.powerFlowApprox()
         ratedIMat = self.data.loc[:, 'I_rated_A'].to_numpy().reshape(-1, 1)
-        self.congestionStatus.loc[:, :] = self.loading.loc[:, :] > ratedIMat.T
+        self.congestionStatus.loc[:, :] = self.loading.abs().loc[:, :] > ratedIMat.T
         if self.congestionStatus.any(axis=None):
             self.reqdFlexTimes = self.dailyTimes[self.congestionStatus.any(axis='columns').values]
             return True
@@ -197,7 +197,7 @@ class Grid:
             df = df.loc[df['Name'].isin(self.data['Name']), :]
             df.set_index('Name', inplace=True)
             dfList.append(df)
-        self.sensitivity = pd.concat(dfList, axis=0, ignore_index=True)
+        self.sensitivity = pd.concat(dfList, axis=0, ignore_index=False)
 
     def powerFlowApprox(self):
         self.loading = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), 0.0),
@@ -229,7 +229,6 @@ class Grid:
                 else:
                     totalGen += qty
             """include remaining power flow from HV transformer"""
-            print(totalLoad, totalGen)
             sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
                                                self.nodeSensitivityDict[self.HVTrafoNode]]
             self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * (totalLoad + totalGen)

@@ -32,8 +32,8 @@ class DSO:
         self.bids = {}
         nBids = len(self.flexMarket.bids)
         dispatchStatus = None
-        if self.grid.reqdFlexTimes:
-            dispatchStatus = pd.DataFrame(np.full((self.grid.reqdFlexTimes, len(self.flexAgents)), False),
+        if len(self.grid.reqdFlexTimes) > 0:
+            dispatchStatus = pd.DataFrame(np.full((len(self.grid.reqdFlexTimes), len(self.flexAgents)), False),
                                           columns=self.flexAgents)
             for time in self.grid.reqdFlexTimes:
                 self.bids[time] = pd.DataFrame(data={'qty': np.full(nBids, 0),
@@ -42,9 +42,9 @@ class DSO:
                 """congested lines/ nodes at this particular time"""
                 congested = self.grid.data.loc[self.grid.congestionStatus.loc[time, :].values, 'Name'].values
                 """"""
-                reqdFlexI_A = self.grid.data.loc[congested, 'I_rated_A'] - self.grid.loading.loc[time, congested]
+                reqdFlexI_A = self.grid.data.loc[self.grid.data['Name'].isin(congested), 'I_rated_A'] - self.grid.loading.loc[time, congested]
                 impact = pd.DataFrame(np.full((nBids, len(congested)), 0), columns=congested)
-                for i, agentID, flexbid in enumerate(self.flexMarket.bids.items()):
+                for i, (agentID, flexbid) in enumerate(self.flexMarket.bids.items()):
                     """get the sensitivity of this agent on the congested lines"""
                     sensitivity = self.grid.sensitivity.loc[congested, agentID].values
                     self.bids[time].loc[i, ['qty', 'price']] = flexbid.loc[time, ['qty_bid', 'price']]

@@ -8,6 +8,7 @@ class FlexAgent:
                  spotTimePeriod = 8760, dailySpotTime = 24, flexTimePeriod = 0, needCounterTrade = False,
                  discountFactor = 0.7, learningRate = 0.001):
         self.id = id
+        self.node = ""
         self.type = "unknown"
         self.location = location  #
         self.minPower = minPower
@@ -42,7 +43,7 @@ class FlexAgent:
         self.discountFactor = discountFactor
         self.learningRate = learningRate
         self.rewardCount = 0.0
-        self.NN = AgentNeuralNet()
+        # self.NN = AgentNeuralNet()
         """during flex bid some agents like 
             DSM may need to bid -ve qty to reduce the qty already purchased in spot market 
             eV may need to bid -ve qty to (eg, to stop/reduce charging)
@@ -56,6 +57,8 @@ class FlexAgent:
         self.highPriceLimit = 5
         self.penaltyViolation = -100
         self.spotState = None
+        """current day MCP"""
+        self.MCP = []
 
     def reset(self, *args, **kwargs):
         self.day = 0
@@ -80,6 +83,7 @@ class FlexAgent:
         self.flexBidPriceMultiplier = np.random.uniform(self.lowPriceLimit, self.highPriceLimit, size=self.dailySpotTime)
         self.rewardCount = 0.0
         self.spotState = True
+        self.MCP = list(np.random.randint(0, 20, size=24))
 
     def printInfo(self):
         print("Agent ID: {}\nLocation: {}\nMaximum Power: {}"
@@ -177,6 +181,9 @@ class FlexAgent:
         # TODO should the reward be scaled between 0-1?
         return self.rewardCount
 
+    def setMCP(self, price):
+        self.MCP = price
+
     def getActionLimits(self):
         """returns the min and max limits for the action of the agent"""
         # TODO will the same space work for both states?
@@ -196,19 +203,17 @@ class FlexAgent:
     def getObservation(self):
         """returns the current observation of the environment:
             observation is
-                hourly market clearing prices of 't-1' Day ahead market,
+                hourly market clearing prices of 't' Day ahead market,
                 hourly dispatched power of the agent in 't-1' Day ahead market,
                 hourly dispatched power of the agent in 't-1' Flex market,
                 spot or flex state
         """
         # TODO add reqd flex times?, add weekend vs weekdays?
         if self.day == 0:
-            MCP = np.random.randint(15, 30, size=24)
             spotDispatch = np.full(self.dailySpotTime, 0)
             flexDispatch = np.full(self.dailySpotTime, 0)
         else:
             prevDayTimes = np.arange((self.day-1) * self.dailySpotTime, self.day * self.dailySpotTime)
-            MCP = self.spotBid.loc[self.spotBid['time'].isin(prevDayTimes), 'MCP'].values
 
             spotDispatch = np.full(self.dailySpotTime, 0)
             flexDispatch = np.full(self.dailySpotTime, 0)
@@ -221,7 +226,7 @@ class FlexAgent:
             flexDispatch[dispatchedMask] = self.flexBid.loc[self.flexBid['time'].isin(prevDayTimes),
                                                             'qty_bid'][dispatchedMask].values
 
-        return MCP, spotDispatch, flexDispatch, int(self.spotState)
+        return self.MCP, spotDispatch, flexDispatch, int(self.spotState)
 
     def getReward(self):
         spotReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()

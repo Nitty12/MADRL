@@ -125,7 +125,7 @@ class LocalFlexMarketEnv(gym.Env):
     def _get_done(self, agent):
         """when to reset the environment?
         currently after 1 year"""
-        if self.SpotMarket.day == self.SpotMarket.spotTimePeriod/self.SpotMarket.dailySpotTime:
+        if self.SpotMarket.day + 1 == self.SpotMarket.spotTimePeriod/self.SpotMarket.dailySpotTime:
             return True
         else:
             return False
@@ -153,8 +153,6 @@ class LocalFlexMarketEnv(gym.Env):
             agent.flexBidPriceMultiplier = action[0][2*self.SpotMarket.dailySpotTime:]
 
     def spotStep(self):
-        self.SpotMarket.MCP.loc[self.SpotMarket.MCP['time'].isin(self.SpotMarket.dailyTimes), 'price'] = \
-            np.random.randint(15, 30, size=24)
         self.SpotMarket.collectBids()
         self.SpotMarket.sendDispatch()
 
