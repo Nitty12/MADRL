@@ -30,10 +30,10 @@ class FlexMarket:
     def sendDispatch(self, flexDispatchStatus):
         for participant in self.participants:
             if flexDispatchStatus is not None:
-                self.bids[participant.id].loc[:, 'dispatched'] = flexDispatchStatus.loc[:, participant.id]
+                self.bids[participant.id].loc[:, 'dispatched'] = flexDispatchStatus.loc[:, participant.id].values
                 # setting explicitly
                 participant.dailyFlexBid.loc[participant.dailyFlexBid['time'].isin(self.reqdFlexTimes), 'dispatched'] = \
-                    flexDispatchStatus.loc[:, participant.id]
+                    flexDispatchStatus.loc[:, participant.id].values
             participant.flexMarketEnd()
 
     def endDay(self):

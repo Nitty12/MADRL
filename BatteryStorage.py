@@ -38,7 +38,7 @@ class BatStorage(FlexAgent):
 
     def reset(self):
         super().reset()
-        self.remainingEnergy = 0
+        self.remainingEnergy = self.minCapacity
         self.SOC = 1.0
         self.flexChangedEnergy = 0
         self.spotChangedEnergy = 0

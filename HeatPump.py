@@ -39,7 +39,7 @@ class HeatPump(FlexAgent):
 
     def reset(self):
         super().reset()
-        self.storageLevel = 0
+        self.storageLevel = self.minStorageLevel
         self.spotChangedEnergy = 0
         self.flexChangedEnergy = 0
 

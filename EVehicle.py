@@ -40,7 +40,7 @@ class EVehicle(FlexAgent):
 
     def reset(self):
         super().reset()
-        self.remainingEnergy = 0
+        self.remainingEnergy = self.minCapacity
         self.flexChangedEnergy = 0
         self.spotChangedEnergy = 0
         self.energyTable = pd.DataFrame(data={'time': np.arange(self.dailySpotTime+1),
@@ -142,7 +142,8 @@ class EVehicle(FlexAgent):
         """change remaining energy to that of the starting time for this day to update after_flex energy table"""
         self.remainingEnergy = self.energyTable.loc[self.energyTable['time'] == self.dailyTimes[0], 'after_spot'].values[0]
         penalizeTimes, startingPenalty = self.checkPenalties(flexDispatchedTimes, flexDispatchedQty, 'after_flex')
-        self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice, penalizeTimes, startingPenalty)
+        self.flexMarketReward(flexDispatchedTimes.values, flexDispatchedQty.values, flexDispatchedPrice.values,
+                              penalizeTimes, startingPenalty)
 
         """After flex market ends for a day, the final energy must be updated for all columns in energy table as it is 
                 the final realised energy after the day"""
@@ -155,7 +156,7 @@ class EVehicle(FlexAgent):
         self.remainingEnergy = self.energyTable.loc[self.energyTable['time'] == nextDayFirstTime, 'after_flex'].values[0]
 
     def flexMarketReward(self, time, qty, price, penalizeTimes, startingPenalty):
-        if time.values:
+        if len(time) > 0:
             qty = [q if not self.dailyAbsenceTimes[i] else 0 for i, q in enumerate(qty)]
             """Price of electricity bought: Here negative of qty is used for reward because generation is negative qty"""
             self.dailyRewardTable.loc[time, 'reward_flex'] = price * -np.array(qty)
