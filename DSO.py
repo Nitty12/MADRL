@@ -13,7 +13,6 @@ class DSO:
         self.bids = {}
 
     def checkCongestion(self):
-        # TODO check the congestion efficiently
         status = self.grid.isCongested()
         return status
 
@@ -35,7 +34,7 @@ class DSO:
         nBids = len(self.flexMarket.bids)
         dispatchStatus = None
         if len(self.grid.reqdFlexTimes) > 0:
-            dispatchStatus = pd.DataFrame(np.full((len(self.grid.reqdFlexTimes), len(self.flexAgents)), False),
+            dispatchStatus = pd.DataFrame(np.full((self.grid.dailyFlexTime, len(self.flexAgents)), False),
                                           columns=[agent.id for agent in self.flexAgents])
             for time in self.grid.reqdFlexTimes:
                 self.bids[time] = pd.DataFrame(data={'qty_bid': np.full(nBids, 0),

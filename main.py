@@ -26,142 +26,130 @@ import os
 import time
 import re
 import util
+from multiprocessing import Pool
 
-st = time.time()
+if __name__ == '__main__':
+    st = time.time()
 
-# TODO why it is not reproducible even though np is seeded?
-np.random.seed(0)
-tf.random.set_seed(0)
-'''
-generation is -ve qty and load is +ve qty
-'''
+    # TODO why it is not reproducible even though np is seeded?
+    np.random.seed(0)
+    tf.random.set_seed(0)
+    '''
+    generation is -ve qty and load is +ve qty
+    '''
 
-from tensorflow.python.client import device_lib
-print(device_lib.list_local_devices())
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+    from tensorflow.python.client import device_lib
+    print(device_lib.list_local_devices())
+    print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
-agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, \
-genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit()
-grid = util.gridInit(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM)
+    agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, \
+    genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit()
+    grid = Grid(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
+                         numCPU=4)
 
-sm = SpotMarket()
-agentsList = [obj for name, obj in agentsDict.items()]
-sm.addParticipants(agentsList)
+    sm = SpotMarket()
+    agentsList = [obj for name, obj in agentsDict.items()]
+    sm.addParticipants(agentsList)
 
-dso = DSO(grid)
-dso.addflexAgents(agentsList)
+    dso = DSO(grid)
+    dso.addflexAgents(agentsList)
 
-# load the train Gym environment
-env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
-                     gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
-# evaluation environment
-eval_py_env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
-                             gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
-env.reset()
+    # load the train Gym environment
+    env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
+                         gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
+    # evaluation environment
+    eval_py_env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
+                                 gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
+    env.reset()
 
-# convert to tf environment
-train_env = tf_py_environment.TFPyEnvironment(env)
-eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
+    # convert to tf environment
+    train_env = tf_py_environment.TFPyEnvironment(env)
+    eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
-time_step = train_env.reset()
+    time_step = train_env.reset()
 
-replay_buffer = util.replayBufferInit(train_env)
-train_step_counter = tf.Variable(0, trainable=False)
-batch_size = 8
-dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
-iterator = iter(dataset)
+    replay_buffer = util.replayBufferInit(train_env)
+    train_step_counter = tf.Variable(0, trainable=False)
+    batch_size = 8
+    dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
+    iterator = iter(dataset)
 
-# initialize the ddpg agents
-agents = train_env.pyenv.envs[0].gym.agents
-nameList = [agent.id for agent in agents]
-for node in networkDict:
-    for type, network in networkDict[node].items():
-        """name of the first agent in that particular type in this node"""
-        name = nameDict[node][type][0]
-        network.initialize(train_env, train_step_counter, nameList.index(name))
+    # initialize the ddpg agents
+    agents = train_env.pyenv.envs[0].gym.agents
+    nameList = [agent.id for agent in agents]
+    for node in networkDict:
+        for type, network in networkDict[node].items():
+            """name of the first agent in that particular type in this node"""
+            name = nameDict[node][type][0]
+            network.initialize(train_env, train_step_counter, nameList.index(name))
 
-# for index, agent in enumerate(agents):
-#     agent.NN.initialize(train_env, train_step_counter, index)
+    """This is the data collection policy"""
+    collect_policySteps = []
+    """This is the evaluation policy"""
+    eval_policySteps = []
+    for agentName in nameList:
+        for node in nameDict:
+            for type, names in nameDict[node].items():
+                if agentName in names:
+                    collect_policySteps.append(networkDict[node][type].collect_policy.action)
+                    eval_policySteps.append(networkDict[node][type].eval_policy.action)
 
-"""This is the data collection policy"""
-collect_policySteps = []
-"""This is the evaluation policy"""
-eval_policySteps = []
-for agentName in nameList:
-    for node in nameDict:
-        for type, names in nameDict[node].items():
-            if agentName in names:
-                collect_policySteps.append(networkDict[node][type].collect_policy.action)
-                eval_policySteps.append(networkDict[node][type].eval_policy.action)
+    # Evaluate the agent's policy once before training.
+    avg_return = util.compute_avg_return(eval_env, eval_policySteps, num_steps=10)
+    returns = [avg_return]
 
-# """This is the data collection policy"""
-# collect_policySteps = [agent.NN.collect_policy.action for agent in agents]
-# """This is the evaluation policy"""
-# eval_policySteps = [agent.NN.eval_policy.action for agent in agents]
+    # initialize trainer
+    networkList = [net for node in networkDict for net in networkDict[node].values()]
+    for net in networkList:
+        # (Optional) Optimize by wrapping some of the code in a graph using TF function.
+        net.agent.train = common.function(net.agent.train)
+        # Reset the train step
+        net.agent.train_step_counter.assign(0)
 
-# Evaluate the agent's policy once before training.
-avg_return = util.compute_avg_return(eval_env, eval_policySteps, num_steps=10)
-returns = [avg_return]
+    # Training the agents
+    num_iterations = 10
+    collect_steps_per_iteration = 2
+    log_interval = 20
+    eval_interval = 20
+    time_step = train_env.reset()
 
-# initialize trainer
-networkList = [net for node in networkDict for net in networkDict[node].values()]
-for net in networkList:
-    # (Optional) Optimize by wrapping some of the code in a graph using TF function.
-    net.agent.train = common.function(net.agent.train)
-    # Reset the train step
-    net.agent.train_step_counter.assign(0)
+    for num_iter in range(1, num_iterations + 1):
+        # Collect a few steps using collect_policy and save to the replay buffer.
+        for _ in range(collect_steps_per_iteration):
+            util.collect_step(train_env, collect_policySteps, replay_buffer)
 
-# # initialize trainer
-# for flexAgent in agents:
-#     # (Optional) Optimize by wrapping some of the code in a graph using TF function.
-#     flexAgent.NN.agent.train = common.function(flexAgent.NN.agent.train)
-#     # Reset the train step
-#     flexAgent.NN.agent.train_step_counter.assign(0)
+        # Sample a batch of data from the buffer and update the agent's network.
+        experience, unused_info = next(iterator)
+        time_steps, policy_steps, next_time_steps, total_agents_target_actions, total_agents_main_actions = \
+            util.get_target_and_main_actions(experience, agents, nameDict, networkDict)
 
-# Training the agents
-num_iterations = 100
-collect_steps_per_iteration = 2
-log_interval = 20
-eval_interval = 20
-time_step = train_env.reset()
+        train_step_counter.assign_add(1)
 
-for num_iter in range(1, num_iterations + 1):
-    # Collect a few steps using collect_policy and save to the replay buffer.
-    for _ in range(collect_steps_per_iteration):
-        util.collect_step(train_env, collect_policySteps, replay_buffer)
+        for i, flexAgent in enumerate(agents):
+            train_loss = flexAgent.NN.agent.train(time_steps, policy_steps, next_time_steps,
+                                                  total_agents_target_actions,
+                                                  total_agents_main_actions,
+                                                  index=i).loss
+            step = flexAgent.NN.agent.train_step_counter.numpy()
+            if step % log_interval == 0:
+                print('Agent ID = {0} step = {1}: loss = {2}'.format(flexAgent.id, step, train_loss))
 
-    # Sample a batch of data from the buffer and update the agent's network.
-    experience, unused_info = next(iterator)
-    time_steps, policy_steps, next_time_steps, total_agents_target_actions, total_agents_main_actions = \
-        util.get_target_and_main_actions(experience, agents, nameDict, networkDict)
+        if train_step_counter % log_interval == 0:
+            print("=====================================================================================")
 
-    train_step_counter.assign_add(1)
+        if num_iter % eval_interval == 0:
+            avg_return = util.compute_avg_return(eval_env, eval_policySteps, num_steps=2)
+            print('step = {0}: Average Return = {1}'.format(num_iter, avg_return))
+            print("=====================================================================================")
+            returns.append(avg_return)
 
-    for i, flexAgent in enumerate(agents):
-        train_loss = flexAgent.NN.agent.train(time_steps, policy_steps, next_time_steps,
-                                              total_agents_target_actions,
-                                              total_agents_main_actions,
-                                              index=i).loss
-        step = flexAgent.NN.agent.train_step_counter.numpy()
-        if step % log_interval == 0:
-            print('Agent ID = {0} step = {1}: loss = {2}'.format(flexAgent.id, step, train_loss))
+    """Plot the returns"""
+    steps = range(0, num_iterations + 1, eval_interval)
+    idx = 0
+    agent_returns = [ret[idx] for ret in returns]
+    plt.plot(steps, agent_returns)
+    plt.ylabel('Average Return - Agent {}'.format(idx))
+    plt.xlabel('Step')
+    plt.show()
 
-    if train_step_counter % log_interval == 0:
-        print("=====================================================================================")
-
-    if num_iter % eval_interval == 0:
-        avg_return = util.compute_avg_return(eval_env, eval_policySteps, num_steps=2)
-        print('step = {0}: Average Return = {1}'.format(num_iter, avg_return))
-        print("=====================================================================================")
-        returns.append(avg_return)
-
-"""Plot the returns"""
-steps = range(0, num_iterations + 1, eval_interval)
-idx = 0
-agent_returns = [ret[idx] for ret in returns]
-plt.plot(steps, agent_returns)
-plt.ylabel('Average Return - Agent {}'.format(idx))
-plt.xlabel('Step')
-plt.show()
-
-print("---------------------------------------------%.2f-----------------------------------"%(time.time()-st))
+    print("---------------------------------------------%.2f-----------------------------------"%(time.time()-st))

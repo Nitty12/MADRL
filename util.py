@@ -209,11 +209,6 @@ def getAgentDetails(data, name):
     return loc, voltage_level, min_power, max_power
 
 
-def gridInit(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM):
-    grid = Grid(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM)
-    return grid
-
-
 def replayBufferInit(train_env):
     """replay buffer stores transition of all the agents"""
     replay_buffer_capacity = 100000
