@@ -34,18 +34,19 @@ class DSO:
         nBids = len(self.flexMarket.bids)
         dispatchStatus = None
         if len(self.grid.reqdFlexTimes) > 0:
-            dispatchStatus = pd.DataFrame(np.full((self.grid.dailyFlexTime, len(self.flexAgents)), False),
-                                          columns=[agent.id for agent in self.flexAgents])
+            dispatchStatus = pd.DataFrame(np.full((len(self.grid.reqdFlexTimes), len(self.flexAgents)), False),
+                                          columns=[agent.id for agent in self.flexAgents],
+                                          index=self.grid.reqdFlexTimes)
             for time in self.grid.reqdFlexTimes:
                 self.bids[time] = pd.DataFrame(data={'qty_bid': np.full(nBids, 0),
                                                      'price': np.full(nBids, 0),
                                                      'accepted': np.full(nBids, False)})
                 currentSensitivity = self.grid.sensitivity.loc[self.grid.sensitivity['time_step']==time+1, :]
                 """congested lines/ nodes at this particular time"""
-                congested = self.grid.data.loc[self.grid.congestionStatus.loc[time % self.grid.dailyFlexTime, :].values, 'Name'].values
+                congested = self.grid.data.loc[self.grid.congestionStatus.loc[time, :].values, 'Name'].values
                 """"""
                 reqdFlexI_A = self.grid.data.loc[self.grid.data['Name'].isin(congested), 'I_rated_A'].values - \
-                              self.grid.loading.loc[time % self.grid.dailyFlexTime, congested].values
+                              self.grid.loading.loc[time, congested].values
                 impact = pd.DataFrame(np.full((nBids, len(congested)), 0), columns=congested)
                 for i, (agentID, flexbid) in enumerate(self.flexMarket.bids.items()):
                     agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentID).group(1)
@@ -99,7 +100,7 @@ class DSO:
                                         break
                                 indexMask = (positiveImpacts.sort_values(ascending=True).cumsum() >= maxI_A).values
                                 acceptedAgentID = positiveImpacts.index[indexMask].values
-                    dispatchStatus.loc[time % self.grid.dailyFlexTime, acceptedAgentID] = True
+                    dispatchStatus.loc[time, acceptedAgentID] = True
                     self.bids[time].loc[acceptedAgentID, 'accepted'] = True
         self.flexMarket.sendDispatch(dispatchStatus)
 

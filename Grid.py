@@ -78,9 +78,9 @@ class Grid:
         self.numLines = len(self.lines)
 
         self.loading = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), 0.0),
-                                    columns=list(self.data.loc[:, 'Name']))
+                                    columns=list(self.data.loc[:, 'Name']), index=self.dailyTimes)
         self.congestionStatus = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), False),
-                                             columns=list(self.data.loc[:, 'Name']))
+                                             columns=list(self.data.loc[:, 'Name']), index=self.dailyTimes)
 
     def importLoadsAndSensi(self):
         """get the household load data from the CSV"""
@@ -92,6 +92,7 @@ class Grid:
         self.powerFlowApprox()
         ratedIMat = self.data.loc[:, 'I_rated_A'].to_numpy().reshape(-1, 1)
         self.congestionStatus.loc[:, :] = self.loading.abs().loc[:, :] > ratedIMat.T
+        self.congestionStatus.index = self.dailyTimes
         if self.congestionStatus.any(axis=None):
             self.reqdFlexTimes = self.dailyTimes[self.congestionStatus.any(axis='columns').values]
             return True
@@ -209,7 +210,8 @@ class Grid:
 
     def powerFlowApprox(self):
         self.loading = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), 0.0),
-                                    columns=list(self.data.loc[:, 'Name']))
+                                    columns=list(self.data.loc[:, 'Name']),
+                                    index=self.dailyTimes)
         for time in self.dailyTimes:
             totalLoad = 0
             totalGen = 0
@@ -219,7 +221,7 @@ class Grid:
                                                       self.nodeSensitivityDict[node]]
                 # TODO should I negate the sensitivityMat?
                 qty = self.loadsAndGens.loc[time, node]
-                self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * qty
+                self.loading.loc[time, :] += sensitivity.values * qty
                 if qty >= 0:
                     totalLoad += qty
                 else:
@@ -231,7 +233,7 @@ class Grid:
                                                       self.nodeSensitivityDict[agentNode]]
                 # TODO should I negate the sensitivityMat?
                 qty = agent.dailySpotBid.loc[time, 'qty_bid']
-                self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * qty
+                self.loading.loc[time, :] += sensitivity.values * qty
                 if qty >= 0:
                     totalLoad += qty
                 else:
@@ -239,7 +241,7 @@ class Grid:
             """include remaining power flow from HV transformer"""
             sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
                                                self.nodeSensitivityDict[self.HVTrafoNode]]
-            self.loading.loc[time % self.dailyFlexTime, :] += sensitivity.values * (totalLoad + totalGen)
+            self.loading.loc[time, :] += sensitivity.values * (totalLoad + totalGen)
 
     def getStatus(self):
         return self.congestionStatus
