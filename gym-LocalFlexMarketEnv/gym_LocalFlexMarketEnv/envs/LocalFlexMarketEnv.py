@@ -101,6 +101,7 @@ class LocalFlexMarketEnv(gym.Env):
         # reset the environment
         self.SpotMarket.reset()
         self.DSO.flexMarket.reset()
+        self.DSO.grid.reset()
         for agent in self.agents:
             agent.reset()
 

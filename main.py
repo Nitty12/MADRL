@@ -77,6 +77,7 @@ if __name__ == '__main__':
     # initialize the ddpg agents
     agents = train_env.pyenv.envs[0].gym.agents
     nameList = [agent.id for agent in agents]
+    typeList = [agent.type for agent in agents]
     for node in networkDict:
         for type, network in networkDict[node].items():
             """name of the first agent in that particular type in this node"""
@@ -88,14 +89,15 @@ if __name__ == '__main__':
     """This is the evaluation policy"""
     eval_policySteps = []
     for agentName in nameList:
-        for node in nameDict:
-            for type, names in nameDict[node].items():
-                if agentName in names:
-                    collect_policySteps.append(networkDict[node][type].collect_policy.action)
-                    eval_policySteps.append(networkDict[node][type].eval_policy.action)
+        agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+        for type, names in nameDict[agentNode].items():
+            if agentName in names:
+                collect_policySteps.append(networkDict[agentNode][type].collect_policy.action)
+                eval_policySteps.append(networkDict[agentNode][type].eval_policy.action)
+                break
 
     # Evaluate the agent's policy once before training.
-    avg_return = util.compute_avg_return(eval_env, eval_policySteps, num_steps=10)
+    avg_return = util.compute_avg_return(eval_env, eval_policySteps, num_steps=2)
     returns = [avg_return]
 
     # initialize trainer
@@ -125,14 +127,19 @@ if __name__ == '__main__':
 
         train_step_counter.assign_add(1)
 
-        for i, flexAgent in enumerate(agents):
-            train_loss = flexAgent.NN.agent.train(time_steps, policy_steps, next_time_steps,
-                                                  total_agents_target_actions,
-                                                  total_agents_main_actions,
-                                                  index=i).loss
-            step = flexAgent.NN.agent.train_step_counter.numpy()
+        for i, agentName in enumerate(nameList):
+            agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+            train_loss = 0
+            for type, names in nameDict[agentNode].items():
+                if agentName in names:
+                    train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
+                                                                          total_agents_target_actions,
+                                                                          total_agents_main_actions,
+                                                                          index=i).loss
+                    break
+            step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
             if step % log_interval == 0:
-                print('Agent ID = {0} step = {1}: loss = {2}'.format(flexAgent.id, step, train_loss))
+                print('Agent ID = {0} step = {1}: loss = {2}'.format(agentName, step, train_loss))
 
         if train_step_counter % log_interval == 0:
             print("=====================================================================================")

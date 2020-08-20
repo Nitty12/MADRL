@@ -111,7 +111,6 @@ def agentsInit():
 
 
 def getEVSeries():
-
     path = os.getcwd()
     """EV timeseries"""
     datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_nnf_1h.csv")
@@ -275,12 +274,6 @@ def get_target_and_main_actions(experience, agents, nameDict, networkDict):
                     break
             if target_action is not None:
                 break
-        # target_action, _ = flexAgent.NN.agent._target_actor_network(next_time_steps.observation[i],
-        #                                                             next_time_steps.step_type,
-        #                                                             training=False)
-        # main_action, _ = flexAgent.NN.agent._actor_network(time_steps.observation[i],
-        #                                                    time_steps.step_type,
-        #                                                    training=True)
         total_agents_target_actions.append(target_action)
         total_agents_main_actions.append(main_action)
     return time_steps, policy_steps, next_time_steps, \
