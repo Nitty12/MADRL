@@ -23,8 +23,10 @@ class REAgent(FlexAgent):
     def reset(self):
         super().reset()
         self.spotBid.loc[:, 'qty_bid'] = self.genSeries
+        self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
         self.flexBid.loc[:, 'qty_bid'] = self.genSeries
         self.flexBid.loc[:, 'price'] = np.full(self.flexTimePeriod, self.feedInPremium, dtype=float)
+        self.dailyFlexBid = self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)]
 
     def printInfo(self):
         super().printInfo()

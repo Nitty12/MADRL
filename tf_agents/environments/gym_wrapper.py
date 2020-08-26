@@ -269,7 +269,9 @@ class GymWrapper(py_environment.PyEnvironment):
     if self._match_obs_space_dtype:
       observation = self._to_obs_space_dtype(observation)
 
-    if self._done:
+    #if self._done:
+    #  return ts.termination(observation, reward)
+    if np.any(self._done):
       return ts.termination(observation, reward)
     else:
       return ts.transition(observation, reward, self._discount)

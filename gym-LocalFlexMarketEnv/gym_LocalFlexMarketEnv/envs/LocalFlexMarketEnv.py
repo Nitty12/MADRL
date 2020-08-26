@@ -89,7 +89,8 @@ class LocalFlexMarketEnv(gym.Env):
         self.time += 1
         self.spotState = not self.spotState
 
-        # return obs, reward, done, info
+        if done[0]:
+            self.reset()
 
         """for testing tf agents"""
         return tuple(obs), tuple(reward), done, info
@@ -109,7 +110,7 @@ class LocalFlexMarketEnv(gym.Env):
         obs = []
         for agent in self.agents:
             obs.append(self._get_obs(agent))
-        # return obs
+
         """for testing tf agents"""
         return tuple(obs)
 
@@ -126,7 +127,7 @@ class LocalFlexMarketEnv(gym.Env):
     def _get_done(self, agent):
         """when to reset the environment?
         currently after 1 year"""
-        if self.SpotMarket.day + 1 == self.SpotMarket.spotTimePeriod/self.SpotMarket.dailySpotTime:
+        if self.SpotMarket.day + 1 >= self.SpotMarket.spotTimePeriod/self.SpotMarket.dailySpotTime:
             return True
         else:
             return False

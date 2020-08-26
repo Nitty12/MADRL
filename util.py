@@ -52,7 +52,7 @@ def agentsInit():
 
     agentsDict = {}
     """the number of agents in each type to consider as flexibility"""
-    numAgents = 2
+    numAgents = 1
     """negate the PV and Wind timeseries to make generation qty -ve"""
     for name in genSeriesPV.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
@@ -278,3 +278,40 @@ def get_target_and_main_actions(experience, agents, nameDict, networkDict):
         total_agents_main_actions.append(main_action)
     return time_steps, policy_steps, next_time_steps, \
            tuple(total_agents_target_actions), tuple(total_agents_main_actions)
+
+
+def checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_counter):
+    """to save and restore the trained RL agents"""
+    path = os.getcwd()
+    checkpointDict = {}
+    for i, agentName in enumerate(nameList):
+        agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+        for type, names in nameDict[agentNode].items():
+            if agentName in names:
+                relativePath = '../results/checkpointAgent_' + agentName
+                checkpointDict[agentName] = common.Checkpointer(
+                    ckpt_dir=os.path.join(path, relativePath),
+                    max_to_keep=1,
+                    agent=networkDict[agentNode][type].agent,
+                    policy=networkDict[agentNode][type].agent.policy,
+                    global_step=train_step_counter
+                )
+                break
+    relativePath = '../results/checkpointReplayBuffer'
+    checkpointDict['ReplayBuffer'] = common.Checkpointer(
+        ckpt_dir=os.path.join(path, relativePath),
+        max_to_keep=1,
+        replay_buffer=replay_buffer
+    )
+    return checkpointDict
+
+
+def restoreCheckpoint(nameList, nameDict, checkpointDict):
+    checkpointDict['ReplayBuffer'].initialize_or_restore()
+    for i, agentName in enumerate(nameList):
+        agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+        for type, names in nameDict[agentNode].items():
+            if agentName in names:
+                checkpointDict[agentName].initialize_or_restore()
+                break
+    train_step_counter = tf.compat.v1.train.get_global_step()

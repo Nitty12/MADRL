@@ -55,7 +55,7 @@ class FlexAgent:
         self.highFlexBidLimit = 0
         self.lowPriceLimit = 1
         self.highPriceLimit = 5
-        self.penaltyViolation = -100
+        self.penaltyViolation = -1000
         self.spotState = None
         """current day MCP"""
         self.MCP = []

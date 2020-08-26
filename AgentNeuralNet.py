@@ -8,7 +8,7 @@ from tf_agents.policies import random_tf_policy
 class AgentNeuralNet:
     def __init__(self):
         # Hyperparameters
-        self.learning_rate = 1e-5
+        self.learning_rate = 1e-3
         self.fc_layer_params_actor = (100,)
         self.fc_layer_params_critic_obs = (50,)
         self.fc_layer_params_critic_merged = (100,)

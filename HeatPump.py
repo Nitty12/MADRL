@@ -259,9 +259,9 @@ class HeatPump(FlexAgent):
                 if possible:
                     self.store(power=qty, time=self.spotTimeInterval, status=status, index=t+1)
                 else:
-                    """storing not possible: we are not modifying the bid, but the energy bought is of 'no use'
-                                             ie., cannot be stored but has to be paid - almost like a penalty"""
+                    """storing not possible: we are not modifying the bid, penalizing"""
                     self.store(power=0, time=self.spotTimeInterval, status=status, index=t+1)
+                    self.penalizeTimes.append(t)
                     # TODO check other possible options here
             else:
                 """In case of Flexbid: check whether it can reduce this particular amount from spot bid
@@ -274,6 +274,7 @@ class HeatPump(FlexAgent):
                     # """if reduction is not possible, modify the bid because it is not realisable"""
                     # self.dailyFlexBid.loc[i, 'qty_bid'] = 0
                     self.load(load=0, time=self.spotTimeInterval, status=status, index=t + 1)
+                    self.penalizeTimes.append(t)
                     # TODO what to do here?
                     pass
             assert -self.maxPower <= dailyBid.loc[t, 'qty_bid'] <= self.maxPower, \
