@@ -4,7 +4,7 @@ import pandas as pd
 
 
 class FlexAgent:
-    def __init__(self, id, location=None, minPower = 0, maxPower = 0, marginalCost = 0,
+    def __init__(self, id, location=None, minPower = 0, maxPower = 0, marginalCost = 30,
                  spotTimePeriod = 8760, dailySpotTime = 24, flexTimePeriod = 0, needCounterTrade = False,
                  discountFactor = 0.7, learningRate = 0.001):
         self.id = id
@@ -54,7 +54,7 @@ class FlexAgent:
         self.lowFlexBidLimit = -1
         self.highFlexBidLimit = 0
         self.lowPriceLimit = 1
-        self.highPriceLimit = 5
+        self.highPriceLimit = 2
         self.penaltyViolation = -1000
         self.spotState = None
         """current day MCP"""

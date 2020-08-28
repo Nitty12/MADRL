@@ -103,11 +103,11 @@ if __name__ == '__main__':
         net.agent.train_step_counter.assign(0)
 
     # Training the agents
-    num_iterations = 5000
-    collect_steps_per_iteration = 20
-    log_interval = 10
-    eval_interval = 20
-    checkpointInterval = 1000
+    num_iterations = 10
+    collect_steps_per_iteration = 2
+    log_interval = 2
+    eval_interval = 5
+    checkpointInterval = 10
     time_step = train_env.reset()
 
     """to append and save for analysis"""
@@ -151,7 +151,7 @@ if __name__ == '__main__':
             step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
             if step % log_interval == 0:
                 print('ID: {0}, step: {1}, loss: {2}'.format(agentName, step, train_loss))
-                loss.append(train_loss.numpy()[0])
+                loss.append(train_loss.numpy())
         lossList.append(loss)
         loss = []
         print('iteration: ', num_iter)

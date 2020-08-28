@@ -59,37 +59,37 @@ def agentsInit():
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesPV.filter(like=name).columns.values[0]
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=genSeriesPV.loc[:, colName])
+                               voltageLevel=voltage_level, genSeries=genSeriesPV.loc[:, colName])
     for name in genSeriesWind.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesWind.filter(like=name).columns.values[0]
         agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, marginalCost=0, genSeries=genSeriesWind.loc[:, colName])
+                               voltageLevel=voltage_level, genSeries=genSeriesWind.loc[:, colName])
     for name in homeStorageList[:numAgents]:
         name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                                      voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost=0)
+                                      voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost = 30)
     for name in chargingSeriesEV.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
         colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
         agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
                                     absenceTimes=absenceSeriesEV.loc[:, colName],
-                                    consumption=consumptionSeriesEV.loc[:, colName])
+                                    consumption=consumptionSeriesEV.loc[:, colName], marginalCost = 30)
     for name in loadingSeriesHP.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesHP.filter(like=name).columns.values[0]
         agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
                                     maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
-                                    scheduledLoad=loadingSeriesHP.loc[:, colName])
+                                    scheduledLoad=loadingSeriesHP.loc[:, colName], marginalCost = 30)
     for name in loadingSeriesDSM.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesDSM.filter(like=name).columns.values[0]
         agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
-                               scheduledLoad=loadingSeriesDSM.loc[:, colName])
+                               scheduledLoad=loadingSeriesDSM.loc[:, colName], marginalCost = 30)
 
     """parameter sharing of RL Network for same types of agents in same node"""
     networkDict = {}

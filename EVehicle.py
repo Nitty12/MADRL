@@ -49,7 +49,8 @@ class EVehicle(FlexAgent):
                                               'before_flex': np.full(self.dailySpotTime+1, self.remainingEnergy,
                                                                     dtype=float),
                                               'after_flex': np.full(self.dailySpotTime+1, self.remainingEnergy,
-                                                                    dtype=float)})
+                                                                    dtype=float),
+                                              'after_flex_remarks':np.full(self.dailySpotTime+1, 'dispatched')})
 
     def printInfo(self):
         super().printInfo()
@@ -213,10 +214,13 @@ class EVehicle(FlexAgent):
                             self.remainingEnergy = self.remainingEnergy + self.spotChangedEnergy
                         if not time == self.spotTimePeriod:
                             self.energyTable.loc[self.energyTable['time'] == time+1, status] = self.remainingEnergy
+                            self.energyTable.loc[self.energyTable['time'] == time + 1, 'after_flex_remarks'] = 'not dispatched'
 
         return penalizeTimes, startingPenalty
 
     def starting(self, nStart, startingPenalty, penalizeTimes, qty, i, status, time):
+        if not time + 1 == self.spotTimePeriod:
+            self.energyTable.loc[self.energyTable['time'] == time + 1, 'after_flex_remarks'] = 'Absent'
         """to check if the EV is starting"""
         if not self.dailyAbsenceTimes[i - 1] or i == 0:
             """EV is starting now"""
@@ -229,6 +233,8 @@ class EVehicle(FlexAgent):
             if nStart < len(self.dailyConsumption):
                 """data has sometimes less consumption values than the number of starts"""
                 self.changeSOC(-self.dailyConsumption[nStart], self.spotTimeInterval, status, time + 1)
+                if not time + 1 == self.spotTimePeriod:
+                    self.energyTable.loc[self.energyTable['time'] == time + 1, 'after_flex_remarks'] = 'consumption'
             else:
                 self.changeSOC(0, self.spotTimeInterval, status, time + 1)
         else:
