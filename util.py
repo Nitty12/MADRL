@@ -315,3 +315,27 @@ def restoreCheckpoint(nameList, nameDict, checkpointDict):
                 checkpointDict[agentName].initialize_or_restore()
                 break
     train_step_counter = tf.compat.v1.train.get_global_step()
+
+
+def trainLoop(agentIndexAndName, nameDict, networkDict, time_steps, policy_steps, next_time_steps, total_agents_target_actions,
+              total_agents_main_actions, num_iter, checkpointInterval, checkpointDict, train_step_counter, typeList,
+              log_interval, loss):
+    agentName = agentIndexAndName[1]
+    index = agentIndexAndName[0]
+    agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+    train_loss = 0
+    for type, names in nameDict[agentNode].items():
+        if agentName in names:
+            train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
+                                                                  total_agents_target_actions,
+                                                                  total_agents_main_actions,
+                                                                  index=index).loss
+            if num_iter % checkpointInterval == 0:
+                """save the training state of all agents"""
+                checkpointDict[agentName].save(train_step_counter)
+            break
+    step = networkDict[agentNode][typeList[index]].agent.train_step_counter.numpy()
+    if step % log_interval == 0:
+        print('ID: {0}, step: {1}, loss: {2}'.format(agentName, step, train_loss))
+        loss.append((index, train_loss.numpy()))
+    return loss

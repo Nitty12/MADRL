@@ -26,9 +26,15 @@ import os
 import time
 import re
 import util
-from multiprocessing import Pool
+from pathos.multiprocessing import ProcessingPool as Pool
+from functools import partial
 import pickle
 import tqdm
+import optuna
+import dask
+from joblib import Parallel, delayed
+import dill
+
 
 if __name__ == '__main__':
     st = time.time()
@@ -52,7 +58,6 @@ if __name__ == '__main__':
     sm = SpotMarket()
     agentsList = [obj for name, obj in agentsDict.items()]
     sm.addParticipants(agentsList)
-
     dso = DSO(grid)
     dso.addflexAgents(agentsList)
 
@@ -135,25 +140,47 @@ if __name__ == '__main__':
 
         train_step_counter.assign_add(1)
 
-        for i, agentName in enumerate(nameList):
-            agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
-            train_loss = 0
-            for type, names in nameDict[agentNode].items():
-                if agentName in names:
-                    train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
-                                                                          total_agents_target_actions,
-                                                                          total_agents_main_actions,
-                                                                          index=i).loss
-                    if num_iter % checkpointInterval == 0:
-                        """save the training state of all agents"""
-                        checkpointDict[agentName].save(train_step_counter)
-                    break
-            step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
-            if step % log_interval == 0:
-                print('ID: {0}, step: {1}, loss: {2}'.format(agentName, step, train_loss))
-                loss.append(train_loss.numpy())
-        lossList.append(loss)
-        loss = []
+        """trying multiprocessing"""
+        agentIndexAndNameList = [(i, name) for i, name in enumerate(nameList)]
+        with Pool(processes=4) as pool:
+            loss = pool.map(partial(util.trainLoop,
+                                    nameDict=nameDict,
+                                    networkDict=networkDict,
+                                    time_steps=time_steps,
+                                    policy_steps=policy_steps,
+                                    next_time_steps=next_time_steps,
+                                    total_agents_target_actions=total_agents_target_actions,
+                                    total_agents_main_actions=total_agents_main_actions,
+                                    num_iter=num_iter,
+                                    checkpointInterval=checkpointInterval,
+                                    checkpointDict=checkpointDict,
+                                    train_step_counter=train_step_counter,
+                                    typeList=typeList,
+                                    log_interval=log_interval,
+                                    loss=loss), agentIndexAndNameList)
+
+        # """without multiprocessing"""
+        # for i, agentName in enumerate(nameList):
+        #     agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+        #     train_loss = 0
+        #     for type, names in nameDict[agentNode].items():
+        #         if agentName in names:
+        #             train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
+        #                                                                   total_agents_target_actions,
+        #                                                                   total_agents_main_actions,
+        #                                                                   index=i).loss
+        #             if num_iter % checkpointInterval == 0:
+        #                 """save the training state of all agents"""
+        #                 checkpointDict[agentName].save(train_step_counter)
+        #             break
+        #     step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
+        #     if step % log_interval == 0:
+        #         print('ID: {0}, step: {1}, loss: {2}'.format(agentName, step, train_loss))
+        #         loss.append(train_loss.numpy())
+
+        if num_iter % log_interval == 0:
+            lossList.append(loss)
+            loss = []
         print('iteration: ', num_iter)
 
         if num_iter % checkpointInterval == 0:
