@@ -91,6 +91,13 @@ def agentsInit():
         agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
                                scheduledLoad=loadingSeriesDSM.loc[:, colName], marginalCost = 30)
 
+    nameDict, networkDict = RLNetworkInit(agentsDict)
+
+    return agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, \
+           loadingSeriesDSM
+
+
+def RLNetworkInit(agentsDict):
     """parameter sharing of RL Network for same types of agents in same node"""
     networkDict = {}
     nameDict = {}
@@ -105,9 +112,7 @@ def agentsInit():
             nameDict[agent.node][agent.type].append(name)
         if networkDict[agent.node].get(agent.type) is None:
             networkDict[agent.node][agent.type] = AgentNeuralNet()
-
-    return agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, \
-           loadingSeriesDSM
+    return nameDict, networkDict
 
 
 def getEVSeries():
@@ -339,3 +344,44 @@ def trainLoop(agentIndexAndName, nameDict, networkDict, time_steps, policy_steps
         print('ID: {0}, step: {1}, loss: {2}'.format(agentName, step, train_loss))
         loss.append((index, train_loss.numpy()))
     return loss
+
+
+def hyperParameterOpt(trial):
+    """hyperparameter optimization with optuna"""
+    parameterDict = {}
+    parameterDict['learning_rate'] = trial.suggest_float("adam_learning_rate", 1e-5, 1e-1)
+    parameterDict['discount_factor'] = trial.suggest_float('discount_factor', 0.95, 0.999)
+
+    parameterDict['actor_activation_fn'] = trial.suggest_categorical('actor_activation_fn',
+                                                         ['relu', 'leaky_relu'])
+    parameterDict['critic_activation_fn'] = trial.suggest_categorical('critic_activation_fn',
+                                                         ['relu', 'leaky_relu'])
+
+    parameterDict['fc_layer_params_actor'] = []
+    parameterDict['fc_dropout_layer_params_actor'] = []
+    actor_n_layers = trial.suggest_int('actor_n_layers', 1, 3)
+    for i in range(actor_n_layers):
+        num_hidden = trial.suggest_int("actor_n_units_L{}".format(i+1), 50, 300)
+        dropout_rate = trial.suggest_float("actor_dropout_rate_L{}".format(i+1), 0, 0.5)
+        parameterDict['fc_layer_params_actor'].append(num_hidden)
+        parameterDict['fc_dropout_layer_params_actor'].append(dropout_rate)
+
+    parameterDict['fc_layer_params_critic_obs'] = []
+    parameterDict['fc_dropout_layer_params_critic_obs'] = []
+    critic_obs_n_layers = trial.suggest_int('critic_obs_n_layers', 1, 2)
+    for i in range(critic_obs_n_layers):
+        num_hidden = trial.suggest_int("critic_obs_n_units_L{}".format(i+1), 50, 300)
+        dropout_rate = trial.suggest_float("critic_obs_dropout_rate_L{}".format(i+1), 0, 0.5)
+        parameterDict['fc_layer_params_critic_obs'].append(num_hidden)
+        parameterDict['fc_dropout_layer_params_critic_obs'].append(dropout_rate)
+
+    parameterDict['fc_layer_params_critic_merged'] = []
+    parameterDict['fc_dropout_layer_params_critic_merged'] = []
+    critic_merged_n_layers = trial.suggest_int('critic_merged_n_layers', 1, 2)
+    for i in range(critic_merged_n_layers):
+        num_hidden = trial.suggest_int("critic_merged_n_units_L{}".format(i+1), 50, 300)
+        dropout_rate = trial.suggest_float("critic_merged_dropout_rate_L{}".format(i+1), 0, 0.5)
+        parameterDict['fc_layer_params_critic_merged'].append(num_hidden)
+        parameterDict['fc_dropout_layer_params_critic_merged'].append(dropout_rate)
+
+    return parameterDict

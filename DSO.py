@@ -41,7 +41,7 @@ class DSO:
                 self.bids[time] = pd.DataFrame(data={'qty_bid': np.full(nBids, 0),
                                                      'price': np.full(nBids, 0),
                                                      'accepted': np.full(nBids, False)})
-                currentSensitivity = self.grid.sensitivity.loc[self.grid.sensitivity['time_step']==time+1, :]
+                currentSensitivity = self.grid.getCurrentSensitivity(time)
                 """congested lines/ nodes at this particular time"""
                 congested = self.grid.data.loc[self.grid.congestionStatus.loc[time, :].values, 'Name'].values
                 """"""

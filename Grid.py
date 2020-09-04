@@ -8,7 +8,7 @@ import pickle
 
 class Grid:
     def __init__(self,numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
-                 TimePeriod=8760, numNodes=0, numLines=0, numCPU=4):
+                 TimePeriod=8760, numNodes=0, numLines=0, numCPU=24):
         """the number of agents in each type to consider as flexibility"""
         self.numAgents = numAgents
         self.loadingSeriesHP = loadingSeriesHP
@@ -78,16 +78,18 @@ class Grid:
         self.numNodes = len(self.nodes)
         self.numLines = len(self.lines)
 
-        self.loading = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), 0.0),
-                                    columns=list(self.data.loc[:, 'Name']), index=self.dailyTimes)
-        self.congestionStatus = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), False),
-                                             columns=list(self.data.loc[:, 'Name']), index=self.dailyTimes)
-
     def importLoadsAndSensi(self):
         """get the household load data from the CSV"""
         self.getLoadsAndGens()
         """load the sensitivity matrix and concatenate"""
         self.loadSensitivityMatrix()
+        """retain only the lines and nodes present in the sensitivity matrix"""
+        linesAndNodes = self.sensitivity.index[self.sensitivity['time_step'] == 1].values
+        self.data = self.data.loc[self.data['Name'].isin(linesAndNodes),:]
+        self.loading = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), 0.0),
+                                    columns=linesAndNodes, index=self.dailyTimes)
+        self.congestionStatus = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), False),
+                                             columns=linesAndNodes, index=self.dailyTimes)
 
     def isCongested(self):
         self.powerFlowApprox()
@@ -162,19 +164,20 @@ class Grid:
     def loadSensitivityMatrix(self):
         """walk through all the sensitivity matrices and concatenate as a single dataframe"""
         path = os.getcwd()
-        datapath = os.path.join(path, "../inputs/sensitivity")
+        datapath = os.path.join(path, "../../../../Projekte/Vargehese/Sensis_3544_9")
         fileList = [os.path.join(root, file) for root, dirs, files in os.walk(datapath) for file in files if
                     file.endswith('Sensitivities_Init_.csv')]
 
-        if os.path.isfile("../inputs/SensiDF.pkl"):
-            self.sensitivity = pd.read_pickle("../inputs/SensiDF.pkl")
+        if os.path.isfile("../inputs/SensiDFNew.pkl"):
+            print("Reading pickled sensitivity dataframe")
+            self.sensitivity = pd.read_pickle("../inputs/SensiDFNew.pkl")
 
             """Read the first file to get required data useful for consequent processing"""
             df = pd.read_csv(fileList[0], sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
                              encoding='unicode_escape')
             dfList = []
             if not dfList:
-                """gets the first flexagent name connected to a particular node to get the sensitivity to use for 
+                """gets the first flexagent name connected to a particular node to get the sensitivity to use for
                     power flow approximation"""
                 for node in self.loadsAndGens:
                     nodeNumber = node[9:]
@@ -204,30 +207,44 @@ class Grid:
             with Pool(processes=self.numCPU) as pool:
                 dfList = pool.map(self.readSensi, fileList)
             self.sensitivity = pd.concat(dfList, axis=0, ignore_index=False)
-            self.sensitivity.to_pickle("../inputs/SensiDF.pkl")
+            self.sensitivity.to_pickle("../inputs/SensiDFNew.pkl")
 
     def readSensi(self, file):
         df = pd.read_csv(file, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
                          encoding='unicode_escape')
         df.rename(columns={'Unnamed: 0': 'Name', 'Unnamed: 1': 'time_step'}, inplace=True)
-        df.drop('Unnamed: 6672', axis=1, inplace=True)
+        df.drop('Unnamed: 6176', axis=1, inplace=True)
         df = df.filter(['Name', 'time_step'] + self.agentsWithNewNodeList + self.nodeSensitivityList)
         """take only those lines present in the grid even if sensitivity matrix have extra"""
         df = df.loc[df['Name'].isin(self.data['Name']), :]
         df.set_index('Name', inplace=True)
         return df
 
+    def getCurrentSensitivity(self, time, node=None):
+        if node is None:
+            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1, :]
+            if len(sensitivity) == 0:
+                """some sensitivity matrices are missing, use the previous ones instead"""
+                sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time, :]
+        else:
+            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
+                                           self.nodeSensitivityDict[node]]
+            if len(sensitivity) == 0:
+                """some sensitivity matrices are missing, use the previous ones instead"""
+                sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time,
+                                                   self.nodeSensitivityDict[node]]
+        return sensitivity
+
     def powerFlowApprox(self):
-        self.loading = pd.DataFrame(np.full((self.dailyFlexTime, self.numNodes + self.numLines), 0.0),
-                                    columns=list(self.data.loc[:, 'Name']),
-                                    index=self.dailyTimes)
+        linesAndNodes = self.sensitivity.index[self.sensitivity['time_step'] == 1].values
+        self.loading = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), 0.0),
+                                    columns=linesAndNodes, index=self.dailyTimes)
         for time in self.dailyTimes:
             totalLoad = 0
             totalGen = 0
             """add the contribution from households and other static agents to the lines"""
             for node in self.loadsAndGens:
-                sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time+1,
-                                                      self.nodeSensitivityDict[node]]
+                sensitivity = self.getCurrentSensitivity(time, node)
                 # TODO should I negate the sensitivityMat?
                 qty = self.loadsAndGens.loc[time, node]
                 self.loading.loc[time, :] += sensitivity.values * qty
@@ -238,8 +255,7 @@ class Grid:
             """add the flex agent contribution to the lines"""
             for agent in self.flexAgents:
                 agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]" , agent.id).group(1)
-                sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time+1,
-                                                      self.nodeSensitivityDict[agentNode]]
+                sensitivity = self.getCurrentSensitivity(time, agentNode)
                 # TODO should I negate the sensitivityMat?
                 qty = agent.dailySpotBid.loc[time, 'qty_bid']
                 self.loading.loc[time, :] += sensitivity.values * qty
@@ -248,8 +264,7 @@ class Grid:
                 else:
                     totalGen += qty
             """include remaining power flow from HV transformer"""
-            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
-                                               self.nodeSensitivityDict[self.HVTrafoNode]]
+            sensitivity = self.getCurrentSensitivity(time, self.HVTrafoNode)
             self.loading.loc[time, :] += sensitivity.values * (totalLoad + totalGen)
 
     def getStatus(self):
