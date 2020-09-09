@@ -210,13 +210,13 @@ class FlexAgent:
         """
         # TODO add reqd flex times?, add weekend vs weekdays?
         if self.day == 0:
-            spotDispatch = np.full(self.dailySpotTime, 0)
-            flexDispatch = np.full(self.dailySpotTime, 0)
+            spotDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
+            flexDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
         else:
             prevDayTimes = np.arange((self.day-1) * self.dailySpotTime, self.day * self.dailySpotTime)
 
-            spotDispatch = np.full(self.dailySpotTime, 0)
-            flexDispatch = np.full(self.dailySpotTime, 0)
+            spotDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
+            flexDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
 
             dispatchedMask = self.spotBid.loc[self.spotBid['time'].isin(prevDayTimes), 'dispatched'].values
             spotDispatch[dispatchedMask] = self.spotBid.loc[self.spotBid['time'].isin(prevDayTimes),
