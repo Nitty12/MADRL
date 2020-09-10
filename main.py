@@ -60,7 +60,7 @@ if __name__ == '__main__':
 
     # load the train Gym environment
     env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
-                         gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'grid': grid})
+                         gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'alg': 'QMIX'})
     env.reset()
 
     # convert to tf environment

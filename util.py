@@ -29,19 +29,25 @@ import re
 
 def agentsInit():
     path = os.getcwd()
-    datapath = os.path.join(path, "../inputs/RA_RD_Import_.csv")
-    data = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0,
-                       usecols=['Name', 'Location', 'Un'], error_bad_lines=False)
-    data.columns = ['Name', 'Location', 'Un_kV']
-    data.reset_index(inplace=True, drop=True)
-    data['Un_kV'] = data['Un_kV'].apply(pd.to_numeric)
+    if os.path.isfile("../inputs/RA_RD_Import_.pkl"):
+        data = pd.read_pickle("../inputs/RA_RD_Import_.pkl")
+    else:
+        datapath = os.path.join(path, "../inputs/RA_RD_Import_.csv")
+        data = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0,
+                           usecols=['Name', 'Location', 'Un'], error_bad_lines=False)
+        data.columns = ['Name', 'Location', 'Un_kV']
+        data.reset_index(inplace=True, drop=True)
+        data['Un_kV'] = data['Un_kV'].apply(pd.to_numeric)
+        data.to_pickle("../inputs/RA_RD_Import_.pkl")
 
     loadingSeriesHP = getHPSeries()
     chargingSeriesEV, capacitySeriesEV, absenceSeriesEV, consumptionSeriesEV = getEVSeries()
-    relativePath = "../inputs/PV_Zeitreihe_nnf_1h.csv"
-    genSeriesPV = getGenSeries(relativePath)
-    relativePath = "../inputs/WEA_nnf_1h.csv"
-    genSeriesWind = getGenSeries(relativePath)
+    relativePathCSV = "../inputs/PV_Zeitreihe_nnf_1h.csv"
+    relativePathPickle = "../inputs/PV_Zeitreihe_nnf_1h.pkl"
+    genSeriesPV = getGenSeries(relativePathCSV, relativePathPickle)
+    relativePathCSV = "../inputs/WEA_nnf_1h.csv"
+    relativePathPickle = "../inputs/WEA_nnf_1h.pkl"
+    genSeriesWind = getGenSeries(relativePathCSV, relativePathPickle)
     loadingSeriesDSM = getDSMSeries()
 
     """contains names of the respective agents"""
@@ -118,63 +124,87 @@ def RLNetworkInit(agentsDict):
 def getEVSeries():
     path = os.getcwd()
     """EV timeseries"""
-    datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_nnf_1h.csv")
-    chargingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                 encoding='unicode_escape')
-    chargingSeries.drop('Unnamed: 0', axis=1, inplace=True)
-    chargingSeries = chargingSeries.apply(pd.to_numeric)
+    if os.path.isfile("../inputs/EMob_Zeitreihe_nnf_1h.pkl"):
+        chargingSeries = pd.read_pickle("../inputs/EMob_Zeitreihe_nnf_1h.pkl")
+    else:
+        datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_nnf_1h.csv")
+        chargingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                     encoding='unicode_escape')
+        chargingSeries.drop('Unnamed: 0', axis=1, inplace=True)
+        chargingSeries = chargingSeries.apply(pd.to_numeric)
+        chargingSeries.to_pickle("../inputs/EMob_Zeitreihe_nnf_1h.pkl")
 
     """EV capacity timeseries"""
-    datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_capacity.csv")
-    capacitySeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                 encoding='unicode_escape')
-    capacitySeries.drop('Unnamed: 0', axis=1, inplace=True)
-    capacitySeries = capacitySeries.apply(pd.to_numeric)
+    if os.path.isfile("../inputs/EMob_Zeitreihe_capacity.pkl"):
+        capacitySeries = pd.read_pickle("../inputs/EMob_Zeitreihe_capacity.pkl")
+    else:
+        datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_capacity.csv")
+        capacitySeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                     encoding='unicode_escape')
+        capacitySeries.drop('Unnamed: 0', axis=1, inplace=True)
+        capacitySeries = capacitySeries.apply(pd.to_numeric)
+        capacitySeries.to_pickle("../inputs/EMob_Zeitreihe_capacity.pkl")
 
     """EV absence timeseries"""
-    datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_absence.csv")
-    absenceSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                 encoding='unicode_escape')
-    absenceSeries.drop('Unnamed: 0', axis=1, inplace=True)
-    absenceSeries.columns = capacitySeries.columns
+    if os.path.isfile("../inputs/EMob_Zeitreihe_absence.pkl"):
+        absenceSeries = pd.read_pickle("../inputs/EMob_Zeitreihe_absence.pkl")
+    else:
+        datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_absence.csv")
+        absenceSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                     encoding='unicode_escape')
+        absenceSeries.drop('Unnamed: 0', axis=1, inplace=True)
+        absenceSeries.columns = capacitySeries.columns
+        absenceSeries.to_pickle("../inputs/EMob_Zeitreihe_absence.pkl")
 
     """EV consumption timeseries"""
-    datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_consumption.csv")
-    consumptionSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                    encoding='unicode_escape')
-    consumptionSeries.drop('Unnamed: 0', axis=1, inplace=True)
+    if os.path.isfile("../inputs/EMob_Zeitreihe_consumption.pkl"):
+        consumptionSeries = pd.read_pickle("../inputs/EMob_Zeitreihe_consumption.pkl")
+    else:
+        datapath = os.path.join(path, "../inputs/EMob_Zeitreihe_consumption.csv")
+        consumptionSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                        encoding='unicode_escape')
+        consumptionSeries.drop('Unnamed: 0', axis=1, inplace=True)
+        consumptionSeries.to_pickle("../inputs/EMob_Zeitreihe_consumption.pkl")
     return chargingSeries, capacitySeries, absenceSeries, consumptionSeries
 
 
 def getHPSeries():
     """Heat pump loading timeseries"""
     path = os.getcwd()
-    datapath = os.path.join(path, "../inputs/WP_Zeitreihe_nnf.csv")
-    loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                 encoding='unicode_escape')
-    """cleaning the dataframe"""
-    loadingSeries.drop('NNF', axis=1, inplace=True)
-    loadingSeries.drop(loadingSeries.index[0], inplace=True)
-    # TODO check if there is this extra row in every HP series
-    loadingSeries.drop(loadingSeries.index[8760], inplace=True)
-    loadingSeries.reset_index(drop=True, inplace=True)
-    loadingSeries = editNames(loadingSeries)
-    loadingSeries = loadingSeries.apply(pd.to_numeric)
+    if os.path.isfile("../inputs/WP_Zeitreihe_nnf.pkl"):
+        loadingSeries = pd.read_pickle("../inputs/WP_Zeitreihe_nnf.pkl")
+    else:
+        datapath = os.path.join(path, "../inputs/WP_Zeitreihe_nnf.csv")
+        loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                     encoding='unicode_escape')
+        """cleaning the dataframe"""
+        loadingSeries.drop('NNF', axis=1, inplace=True)
+        loadingSeries.drop(loadingSeries.index[0], inplace=True)
+        # TODO check if there is this extra row in every HP series
+        loadingSeries.drop(loadingSeries.index[8760], inplace=True)
+        loadingSeries.reset_index(drop=True, inplace=True)
+        loadingSeries = editNames(loadingSeries)
+        loadingSeries = loadingSeries.apply(pd.to_numeric)
+        loadingSeries.to_pickle("../inputs/WP_Zeitreihe_nnf.pkl")
     return loadingSeries
 
 
 def getDSMSeries():
     """DSM scheduled load timeseries"""
     path = os.getcwd()
-    datapath = os.path.join(path, "../inputs/ang_Kunden_GHD_nnf_1h.csv")
-    loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                 encoding='unicode_escape')
-    """cleaning the dataframe"""
-    loadingSeries.drop('NNF', axis=1, inplace=True)
-    loadingSeries.drop(loadingSeries.index[0], inplace=True)
-    loadingSeries.reset_index(drop=True, inplace=True)
-    loadingSeries = editNames(loadingSeries)
-    loadingSeries = loadingSeries.apply(pd.to_numeric)
+    if os.path.isfile("../inputs/ang_Kunden_GHD_nnf_1h.pkl"):
+        loadingSeries = pd.read_pickle("../inputs/ang_Kunden_GHD_nnf_1h.pkl")
+    else:
+        datapath = os.path.join(path, "../inputs/ang_Kunden_GHD_nnf_1h.csv")
+        loadingSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                     encoding='unicode_escape')
+        """cleaning the dataframe"""
+        loadingSeries.drop('NNF', axis=1, inplace=True)
+        loadingSeries.drop(loadingSeries.index[0], inplace=True)
+        loadingSeries.reset_index(drop=True, inplace=True)
+        loadingSeries = editNames(loadingSeries)
+        loadingSeries = loadingSeries.apply(pd.to_numeric)
+        loadingSeries.to_pickle("../inputs/ang_Kunden_GHD_nnf_1h.pkl")
     return loadingSeries
 
 
@@ -187,20 +217,25 @@ def editNames(loadingSeries):
     return loadingSeries
 
 
-def getGenSeries(relativePath):
+def getGenSeries(relativePathCSV, relativePathPickle):
     """get PV and wind generation timeseries"""
     path = os.getcwd()
-    datapath = os.path.join(path, relativePath)
-    genSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                            encoding='unicode_escape', nrows=0)
-    genSeries.drop('NNF', axis=1, inplace=True)
-    columnNames = list(genSeries)
-    genSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
-                            encoding='unicode_escape', dtype=float)
-    genSeries.drop('NNF', axis=1, inplace=True)
-    genSeries.columns = columnNames
-    """converting to negative value for generation"""
-    return -genSeries
+    if os.path.isfile(relativePathPickle):
+        genSeries = pd.read_pickle(relativePathPickle)
+    else:
+        datapath = os.path.join(path, relativePathCSV)
+        genSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                encoding='unicode_escape', nrows=0)
+        genSeries.drop('NNF', axis=1, inplace=True)
+        columnNames = list(genSeries)
+        genSeries = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+                                encoding='unicode_escape', dtype=float)
+        genSeries.drop('NNF', axis=1, inplace=True)
+        genSeries.columns = columnNames
+        """converting to negative value for generation"""
+        genSeries = -genSeries
+        genSeries.to_pickle("../inputs/ang_Kunden_GHD_nnf_1h.pkl")
+    return genSeries
 
 
 def getAgentDetails(data, name):

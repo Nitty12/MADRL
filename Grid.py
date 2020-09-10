@@ -54,21 +54,24 @@ class Grid:
 
     def importGrid(self):
         """get the grid data from the CSV"""
-        script_dir = os.path.dirname(__file__)  # <-- absolute dir the script is in
-        rel_path = "../inputs/CBCO_Results_.csv"
-        abs_file_path = os.path.join(script_dir, rel_path)
-        self.data = pd.read_csv(abs_file_path, sep=';', comment='#', header=0, skiprows=1, error_bad_lines=False)
-        """skip the unwanted rows in between"""
-        self.data = self.data.loc[4:,
-               ['Name', 'Location From', 'Un From', 'Location To', 'Un To', 'P N-0 before Opt.', 'I N-0 before Opt.',
-                'Loading N-0 before Opt.']]
-        self.data.columns = ['Name', 'Loc_from', 'Un_from_kV', 'Loc_to', 'Un_to_kV', 'P_MW', 'I_A', 'Loading_percent']
-        self.data.reset_index(inplace=True, drop=True)
-        self.data[['Un_from_kV', 'Un_to_kV', 'P_MW', 'I_A', 'Loading_percent']] = self.data[
-            ['Un_from_kV', 'Un_to_kV', 'P_MW', 'I_A', 'Loading_percent']].apply(pd.to_numeric)
-        """Calculate the rated current from the data"""
-        ratedI = self.data.I_A / (0.01 * self.data.Loading_percent)
-        self.data = self.data.assign(I_rated_A=ratedI)
+        path = os.getcwd()
+        if os.path.isfile("../inputs/CBCO_Results_.pkl"):
+            self.data = pd.read_pickle("../inputs/CBCO_Results_.pkl")
+        else:
+            datapath = os.path.join(path, "../inputs/CBCO_Results_.csv")
+            self.data = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=1, error_bad_lines=False)
+            """skip the unwanted rows in between"""
+            self.data = self.data.loc[4:,
+                   ['Name', 'Location From', 'Un From', 'Location To', 'Un To', 'P N-0 before Opt.', 'I N-0 before Opt.',
+                    'Loading N-0 before Opt.']]
+            self.data.columns = ['Name', 'Loc_from', 'Un_from_kV', 'Loc_to', 'Un_to_kV', 'P_MW', 'I_A', 'Loading_percent']
+            self.data.reset_index(inplace=True, drop=True)
+            self.data[['Un_from_kV', 'Un_to_kV', 'P_MW', 'I_A', 'Loading_percent']] = self.data[
+                ['Un_from_kV', 'Un_to_kV', 'P_MW', 'I_A', 'Loading_percent']].apply(pd.to_numeric)
+            """Calculate the rated current from the data"""
+            ratedI = self.data.I_A / (0.01 * self.data.Loading_percent)
+            self.data = self.data.assign(I_rated_A=ratedI)
+            self.data.to_pickle("../inputs/CBCO_Results_.pkl")
 
         for name in self.data['Name']:
             if name.startswith(('Trafo', 'Knoten')):
@@ -106,31 +109,36 @@ class Grid:
 
     def getLoadsAndGens(self):
         path = os.getcwd()
-        """reading household loads"""
-        datapath = os.path.join(path, "../inputs/ang_Kunden_HH1_nnf_corrected_1h.csv")
-        loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                    encoding='unicode_escape', nrows=0)
-        loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
-        columnNamesHH1 = list(loadingSeriesColumns)
-        loadingSeriesHH = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
-                                    encoding='unicode_escape', dtype=float)
-        loadingSeriesHH.drop('NNF', axis=1, inplace=True)
-        loadingSeriesHH.columns = columnNamesHH1
+        if os.path.isfile("../inputs/loadingSeriesHH.pkl"):
+            loadingSeriesHH = pd.read_pickle("../inputs/loadingSeriesHH.pkl")
+            columnNamesHH = list(loadingSeriesHH.columns)
+        else:
+            """reading household loads"""
+            datapath = os.path.join(path, "../inputs/ang_Kunden_HH1_nnf_corrected_1h.csv")
+            loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                        encoding='unicode_escape', nrows=0)
+            loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
+            columnNamesHH1 = list(loadingSeriesColumns)
+            loadingSeriesHH = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+                                        encoding='unicode_escape', dtype=float)
+            loadingSeriesHH.drop('NNF', axis=1, inplace=True)
+            loadingSeriesHH.columns = columnNamesHH1
 
-        datapath = os.path.join(path, "../inputs/ang_Kunden_HH2_nnf_corrected_1h.csv")
-        loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
-                                     encoding='unicode_escape', nrows=0)
-        loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
-        columnNamesHH2 = list(loadingSeriesColumns)
-        loadingSeriesHH2 = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
-                                     encoding='unicode_escape', dtype=float)
-        loadingSeriesHH2.drop('NNF', axis=1, inplace=True)
-        loadingSeriesHH2.columns = columnNamesHH2
-        loadingSeriesHH = pd.concat([loadingSeriesHH, loadingSeriesHH2], axis=1, sort=False)
-        # TODO delete efficiently may be use multiprocess pool etc
-        del loadingSeriesHH2
+            datapath = os.path.join(path, "../inputs/ang_Kunden_HH2_nnf_corrected_1h.csv")
+            loadingSeriesColumns = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=0, error_bad_lines=False,
+                                         encoding='unicode_escape', nrows=0)
+            loadingSeriesColumns.drop('NNF', axis=1, inplace=True)
+            columnNamesHH2 = list(loadingSeriesColumns)
+            loadingSeriesHH2 = pd.read_csv(datapath, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+                                         encoding='unicode_escape', dtype=float)
+            loadingSeriesHH2.drop('NNF', axis=1, inplace=True)
+            loadingSeriesHH2.columns = columnNamesHH2
+            loadingSeriesHH = pd.concat([loadingSeriesHH, loadingSeriesHH2], axis=1, sort=False)
+            columnNamesHH = columnNamesHH1 + columnNamesHH2
+            # TODO delete efficiently may be use multiprocess pool etc
+            del loadingSeriesHH2
 
-        columnNames = columnNamesHH1 + columnNamesHH2 + \
+        columnNames = columnNamesHH + \
                       list(self.loadingSeriesHP.columns[self.numAgents:]) + \
                       list(self.chargingSeriesEV.columns[self.numAgents:]) + \
                       list(self.loadingSeriesDSM.columns[self.numAgents:]) + \
