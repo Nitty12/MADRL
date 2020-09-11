@@ -195,3 +195,115 @@ def mlp_layers(conv_layer_params=None,
         layers.append(maybe_permanent_dropout(**dropout_params))
 
   return layers
+
+
+"""Nitty: function for defining hyper net layers for QMIX"""
+def hyper_layers(conv_layer_params=None,
+               fc_layer_params=None,
+               dropout_layer_params=None,
+               activation_fn=tf.keras.activations.relu,
+               kernel_initializer=None,
+               weight_decay_params=None,
+               name=None, activation_needed=True):
+  """Generates conv and fc layers to encode into a hidden state.
+
+  Args:
+    conv_layer_params: Optional list of convolution layers parameters, where
+      each item is a length-three tuple indicating (filters, kernel_size,
+      stride).
+    fc_layer_params: Optional list of fully_connected parameters, where each
+      item is the number of units in the layer.
+    dropout_layer_params: Optional list of dropout layer parameters, each item
+      is the fraction of input units to drop or a dictionary of parameters
+      according to the keras.Dropout documentation. The additional parameter
+      `permanent', if set to True, allows to apply dropout at inference for
+      approximated Bayesian inference. The dropout layers are interleaved with
+      the fully connected layers; there is a dropout layer after each fully
+      connected layer, except if the entry in the list is None. This list must
+      have the same length of fc_layer_params, or be None.
+    activation_fn: Activation function, e.g. tf.keras.activations.relu,.
+    kernel_initializer: Initializer to use for the kernels of the conv and
+      dense layers. If none is provided a default variance_scaling_initializer
+      is used.
+    weight_decay_params: Optional list of weight decay params for the fully
+      connected layer.
+    name: Name for the mlp layers.
+
+  Returns:
+    List of mlp layers.
+
+  Raises:
+    ValueError: If the number of dropout layer parameters does not match the
+      number of fully connected layer parameters.
+  """
+  if kernel_initializer is None:
+    kernel_initializer = tf.compat.v1.variance_scaling_initializer(
+        scale=2.0, mode='fan_in', distribution='truncated_normal')
+
+  layers = []
+
+  if conv_layer_params is not None:
+    layers.extend([
+        tf.keras.layers.Conv2D(
+            filters=filters,
+            kernel_size=kernel_size,
+            strides=strides,
+            activation=activation_fn,
+            kernel_initializer=kernel_initializer,
+            name='/'.join([name, 'conv2d']) if name else None)
+        for (filters, kernel_size, strides) in conv_layer_params
+    ])
+  layers.append(tf.keras.layers.Flatten())
+
+  if fc_layer_params is not None:
+    if dropout_layer_params is None:
+      dropout_layer_params = [None] * len(fc_layer_params)
+    else:
+      if len(dropout_layer_params) != len(fc_layer_params):
+        raise ValueError('Dropout and full connected layer parameter lists have'
+                         ' different lengths (%d vs. %d.)' %
+                         (len(dropout_layer_params), len(fc_layer_params)))
+
+    if weight_decay_params is None:
+      weight_decay_params = [None] * len(fc_layer_params)
+    else:
+      if len(weight_decay_params) != len(fc_layer_params):
+        raise ValueError('Weight decay and fully connected layer parameter '
+                         'lists have different lengths (%d vs. %d.)' %
+                         (len(weight_decay_params), len(fc_layer_params)))
+    i = 0
+    for num_units, dropout_params, weight_decay in zip(
+        fc_layer_params, dropout_layer_params, weight_decay_params):
+      kernel_regularizer = None
+      if weight_decay is not None:
+        kernel_regularizer = tf.keras.regularizers.l2(weight_decay)
+      i += 1
+      if activation_needed:
+          if i >= 2:
+              layers.append(tf.keras.layers.Dense(
+                  num_units,
+                  activation=None,
+                  kernel_initializer=kernel_initializer,
+                  kernel_regularizer=kernel_regularizer,
+                  name='/'.join([name, 'dense']) if name else None))
+          else:
+              layers.append(tf.keras.layers.Dense(
+                  num_units,
+                  activation=activation_fn,
+                  kernel_initializer=kernel_initializer,
+                  kernel_regularizer=kernel_regularizer,
+                  name='/'.join([name, 'dense']) if name else None))
+      else:
+          layers.append(tf.keras.layers.Dense(
+              num_units,
+              activation=None,
+              kernel_initializer=kernel_initializer,
+              kernel_regularizer=kernel_regularizer,
+              name='/'.join([name, 'dense']) if name else None))
+      if not isinstance(dropout_params, dict):
+        dropout_params = {'rate': dropout_params} if dropout_params else None
+
+      if dropout_params is not None:
+        layers.append(maybe_permanent_dropout(**dropout_params))
+
+  return layers
