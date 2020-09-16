@@ -202,13 +202,23 @@ class GymWrapper(py_environment.PyEnvironment):
         self._gym_env.observation_space, spec_dtype_map, simplify_box_bounds,
         'observation')
 
-    """Nitty: modifying to create obs_spec for using centralized critic with obs of all agents"""
+    """Nitty: modifying to create obs_spec for using centralized critic with obs of all agents - MADDPG"""
     self._total_observation_spec = spec_from_gym_space(
         self._gym_env.observation_space, spec_dtype_map, simplify_box_bounds,
         'total_observation', get_total_observation_spec = True)
+    """Nitty: modifying to create action_spec for using centralized critic with action of all agents- MADDPG"""
     self._total_action_spec = spec_from_gym_space(
         self._gym_env.action_space, spec_dtype_map, simplify_box_bounds,
         'total_action', get_total_action_spec = True)
+    """Nitty: modifying to create total individual action space like ((1,),(1,)...) instead of eg, ((72,),(72,)...)
+    for using with Q network for QMIX"""
+    self._total_qmix_action_spec = spec_from_gym_space(
+        self._gym_env.total_qmix_action_space, spec_dtype_map, simplify_box_bounds,
+        'total_qmix_action_space')
+    """Nitty: modifying to create total reduced individual obs space for using with Q network for QMIX"""
+    self._total_qmix_observation_spec = spec_from_gym_space(
+        self._gym_env.total_qmix_observation_space, spec_dtype_map, simplify_box_bounds,
+        'total_qmix_observation_spec')
 
     self._action_spec = spec_from_gym_space(self._gym_env.action_space,
                                             spec_dtype_map, simplify_box_bounds,
@@ -303,12 +313,20 @@ class GymWrapper(py_environment.PyEnvironment):
   def observation_spec(self):
     return self._observation_spec
 
+
   """Nitty: modifying to create obs_spec for using centralized critic with obs of all agents"""
   def total_observation_spec(self):
     return self._total_observation_spec
 
   def total_action_spec(self):
     return self._total_action_spec
+
+  def total_qmix_action_spec(self):
+    return self._total_qmix_action_spec
+
+  def total_qmix_observation_spec(self):
+    return self._total_qmix_observation_spec
+
 
   def action_spec(self):
     return self._action_spec

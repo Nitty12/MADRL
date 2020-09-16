@@ -253,9 +253,13 @@ class TFAgent(tf.Module):
           .format(get_dtypes(kwargs), get_dtypes(self.train_argspec),
                   get_shapes(kwargs), get_shapes(self.train_argspec)))
 
-  """Nitty: edited for centralized training of critic in ddpg"""
+  """Nitty: edited for centralized training of critic in ddpg
+            and QMIX
+            target_actions, main_actions for DDPG
+            target_values, main_values for Q values of QMIX"""
   # def train(self, experience, weights=None, **kwargs):
-  def train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, index, weights=None, **kwargs):
+  def train(self, time_steps, policy_steps, next_time_steps, target, main, index,
+            weights=None, **kwargs):
     """Trains the agent.
     Args:
       experience: A batch of experience data in the form of a `Trajectory`. The
@@ -303,10 +307,11 @@ class TFAgent(tf.Module):
     if self._enable_functions:
       loss_info = self._train_fn(
           time_steps=time_steps, policy_steps=policy_steps, next_time_steps=next_time_steps,
-          target_actions=target_actions, main_actions=main_actions, index=index, weights=weights, **kwargs)
+          target=target, main=main, index=index, weights=weights, **kwargs)
     else:
       loss_info = self._train(time_steps=time_steps, policy_steps=policy_steps, next_time_steps=next_time_steps,
-                              target_actions=target_actions, main_actions=main_actions, index=index, weights=weights,
+                              target=target, main=main,
+                              index=index, weights=weights,
                               **kwargs)
 
     if not isinstance(loss_info, LossInfo):
@@ -403,10 +408,11 @@ class TFAgent(tf.Module):
   def _initialize(self):
     """Returns an op to initialize the agent."""
 
-  """Nitty: edited for centralized training of critic in ddpg"""
+  """Nitty: edited for centralized training of critic in ddpg and for QMIX"""
   @abc.abstractmethod
   # def _train(self, experience, weights):
-  def _train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, index, weights):
+  def _train(self, time_steps, policy_steps, next_time_steps,
+             target, main, index, weights):
     """Returns an op to train the agent.
     This method *must* increment self.train_step_counter exactly once.
     TODO(b/126271669): Consider automatically incrementing this

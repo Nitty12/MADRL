@@ -9,10 +9,11 @@ class LocalFlexMarketEnv(gym.Env):
     """A local flexibility market environment for OpenAI gym"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, SpotMarket, DSO, grid):
+    def __init__(self, SpotMarket, DSO, alg):
         super().__init__()
         self.SpotMarket = SpotMarket
         self.DSO = DSO
+        self.alg = alg
         self.nAgents = len(self.SpotMarket.participants)
         self.agents = self.SpotMarket.participants
         self.time = 0
@@ -37,6 +38,7 @@ class LocalFlexMarketEnv(gym.Env):
         """
         # TODO Separate communication action space??
         self.action_space = []
+        self.total_qmix_action_space = []
 
         """ observation is 
                 hourly market clearing prices of 't-1' Day ahead market,
@@ -45,25 +47,40 @@ class LocalFlexMarketEnv(gym.Env):
                 spot or flex status
         """
         self.observation_space = []
-
+        self.total_qmix_observation_space = []
+        
         for agent in self.agents:
-            total_action_space = []
-            minLimit, maxLimit = agent.getActionLimits()
-            agent_action_space = spaces.Box(low=minLimit, high=maxLimit, dtype=np.float32)
+            total_action_space = [] 
+            minLimit, maxLimit = agent.getActionLimits(self.alg)
+            if self.alg == 'QMIX':
+                agent_action_space = spaces.Box(low=minLimit, high=maxLimit, dtype=int)
+                agent_individual_action_space = []
+                for i in range(len(minLimit)):
+                    agent_individual_action_space.append(spaces.Box(low=minLimit[i], high=maxLimit[i],
+                                                                    shape=(1,), dtype=int))
+                self.total_qmix_action_space.extend(agent_individual_action_space)
+                agent_observation_space = spaces.Box(low=-np.inf, high=+np.inf,
+                                                     shape=(3 * self.SpotMarket.dailySpotTime + 1,), dtype=np.float32)
+                """this reduced obs (providing only the MCP of current hour) will be given to the Q network for each hour"""
+                self.total_qmix_observation_space.append(spaces.Box(low=-np.inf, high=+np.inf,
+                                                     shape=(2 * self.SpotMarket.dailySpotTime + 2,), dtype=np.float32))
+            elif self.alg == 'MADDPG':
+                agent_action_space = spaces.Box(low=minLimit, high=maxLimit, dtype=np.float32)
+                agent_observation_space = spaces.Box(low=-np.inf, high=+np.inf,
+                                                     shape=(3 * self.SpotMarket.dailySpotTime + 1,), dtype=np.float32)
             total_action_space.append(agent_action_space)
             # TODO if there is extra communication space, append it to total_action_space
             if len(total_action_space) > 1:
                 self.action_space.append(spaces.Tuple(total_action_space))
             else:
                 self.action_space.append(total_action_space[0])
-
-            agent_observation_space = spaces.Box(low=-np.inf, high=+np.inf,
-                                                 shape=(3*self.SpotMarket.dailySpotTime + 1, ), dtype=np.float32)
             self.observation_space.append(agent_observation_space)
 
         """Convert to tuple for testing tf agents"""
         self.action_space = spaces.Tuple(self.action_space)
+        self.total_qmix_action_space = spaces.Tuple(self.total_qmix_action_space)
         self.observation_space = spaces.Tuple(self.observation_space)
+        self.total_qmix_observation_space = spaces.Tuple(self.total_qmix_observation_space)
 
     def step(self, action):
         obs = []

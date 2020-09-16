@@ -4,7 +4,7 @@ from WindGen import WG
 from HeatPump import HeatPump
 from BatteryStorage import BatStorage
 from DSM import DSM
-from AgentNeuralNet import AgentNeuralNet
+from AgentNeuralNet import MADDPGAgent, QMIXAgent
 from SpotMarket import SpotMarket
 from DSO import DSO
 from Grid import Grid
@@ -27,7 +27,8 @@ import time
 import re
 
 
-def agentsInit():
+def agentsInit(alg):
+    '''generation is -ve qty and load is +ve qty'''
     path = os.getcwd()
     if os.path.isfile("../inputs/RA_RD_Import_.pkl"):
         data = pd.read_pickle("../inputs/RA_RD_Import_.pkl")
@@ -97,13 +98,13 @@ def agentsInit():
         agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
                                scheduledLoad=loadingSeriesDSM.loc[:, colName], marginalCost = 30)
 
-    nameDict, networkDict = RLNetworkInit(agentsDict)
+    nameDict, networkDict = RLNetworkInit(agentsDict, alg)
 
     return agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, \
            loadingSeriesDSM
 
 
-def RLNetworkInit(agentsDict):
+def RLNetworkInit(agentsDict, alg):
     """parameter sharing of RL Network for same types of agents in same node"""
     networkDict = {}
     nameDict = {}
@@ -117,7 +118,12 @@ def RLNetworkInit(agentsDict):
         else:
             nameDict[agent.node][agent.type].append(name)
         if networkDict[agent.node].get(agent.type) is None:
-            networkDict[agent.node][agent.type] = AgentNeuralNet()
+            if alg=='MADDPG':
+                networkDict[agent.node][agent.type] = MADDPGAgent()
+            elif alg=='QMIX':
+                networkDict[agent.node][agent.type] = [QMIXAgent(type='sbm_spot'),
+                                                       QMIXAgent(type='sbm_flex'),
+                                                       QMIXAgent(type='spm_flex')]
     return nameDict, networkDict
 
 
@@ -263,22 +269,35 @@ def replayBufferInit(train_env):
     return replay_buffer
 
 
-def one_step(environment, policySteps):
+def one_step(environment, policySteps, alg):
     """iteration alternate between spot and flex states"""
     total_agents_action = []
     time_step = environment.current_time_step()
-    for i, policyStep in enumerate(policySteps):
-        individual_time_step = ts.get_individual_time_step(time_step, i)
-        action = policyStep(individual_time_step)
-        total_agents_action.append(action)
-    next_time_step = environment.step(tuple(total_agents_action))
+    if alg == 'QMIX':
+        individual_agent_action = []
+        for i, policyStep in enumerate(policySteps):
+            for t in range(24):
+                individual_qmix_time_step = ts.get_individual_qmix_time_step(time_step, index=i, time=t)
+                action = policyStep(individual_qmix_time_step).action
+                individual_agent_action.append(tf.cast(action, tf.float32)/20.0)
+            if (i+1)%3 == 0:
+                total_agents_action.append(tf.concat(list(individual_agent_action), axis=-1))
+                individual_agent_action = []
+
+        next_time_step = environment.step(tuple(total_agents_action))
+    elif alg == 'MADDPG':
+        for i, policyStep in enumerate(policySteps):
+            individual_time_step = ts.get_individual_time_step(time_step, i)
+            action = policyStep(individual_time_step)
+            total_agents_action.append(action)
+        next_time_step = environment.step(tuple(total_agents_action))
     return time_step, total_agents_action, next_time_step
 
 
-def compute_avg_return(environment, policySteps, num_steps=10):
+def compute_avg_return(environment, policySteps, alg, num_steps=10):
     total_return = None
     for step in range(num_steps):
-        _, _, next_time_step = one_step(environment, policySteps)
+        _, _, next_time_step = one_step(environment, policySteps, alg)
         if step == 0:
             total_return = next_time_step.reward
         else:
@@ -287,37 +306,47 @@ def compute_avg_return(environment, policySteps, num_steps=10):
     return avg_return.numpy()[0]
 
 
-def collect_step(environment, policySteps, buffer):
-    time_step, total_agents_action, next_time_step = one_step(environment, policySteps)
-    traj = trajectory.from_transition(time_step, total_agents_action, next_time_step, joint_action=True)
+def collect_step(environment, policySteps, buffer, alg):
+    time_step, total_agents_action, next_time_step = one_step(environment, policySteps, alg)
+    traj = trajectory.from_transition(time_step, total_agents_action, next_time_step, alg=alg, joint_action=True)
     buffer.add_batch(traj)
     # tf_metrics.AverageReturnMetric(traj)
 
 
-def get_target_and_main_actions(experience, agents, nameDict, networkDict):
-    """get the actions from the target actor network and main actor network of all the agents"""
-    total_agents_target_actions = []
-    total_agents_main_actions = []
+def get_target_and_main_actions_or_values(experience, agents, nameDict, networkDict, alg):
+    """MADDPG - get the actions from the target actor network and main actor network of all the agents
+        QMIX - get the Q values from the target network and main network of all the agents"""
+    total_agents_target = []
+    total_agents_main = []
     time_steps, policy_steps, next_time_steps = (
         trajectory.experience_to_transitions(experience, squeeze_time_dim=True))
     for i, flexAgent in enumerate(agents):
         for node in nameDict:
-            target_action = None
+            target = None
             for type, names in nameDict[node].items():
                 if flexAgent.id in names:
-                    target_action, _ = networkDict[node][type].agent._target_actor_network(next_time_steps.observation[i],
-                                                                    next_time_steps.step_type,
-                                                                    training=False)
-                    main_action, _ = networkDict[node][type].agent._actor_network(time_steps.observation[i],
-                                                                       time_steps.step_type,
-                                                                       training=True)
-                    break
-            if target_action is not None:
+                    if alg=='MADDPG':
+                        target, _ = networkDict[node][type].agent._target_actor_network(next_time_steps.observation[i],
+                                                                        next_time_steps.step_type,
+                                                                        training=False)
+                        main, _ = networkDict[node][type].agent._actor_network(time_steps.observation[i],
+                                                                           time_steps.step_type,
+                                                                           training=True)
+                        break
+                    elif alg=='QMIX':
+                        target, _ = networkDict[node][type].agent._target_q_network(next_time_steps.observation[i],
+                                                                        next_time_steps.step_type,
+                                                                        training=False)
+                        main, _ = networkDict[node][type].agent._q_network(time_steps.observation[i],
+                                                                           time_steps.step_type,
+                                                                           training=True)
+                        break
+            if target is not None:
                 break
-        total_agents_target_actions.append(target_action)
-        total_agents_main_actions.append(main_action)
+        total_agents_target.append(target)
+        total_agents_main.append(main)
     return time_steps, policy_steps, next_time_steps, \
-           tuple(total_agents_target_actions), tuple(total_agents_main_actions)
+           tuple(total_agents_target), tuple(total_agents_main)
 
 
 def checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_counter):

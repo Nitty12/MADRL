@@ -172,7 +172,7 @@ class Grid:
     def loadSensitivityMatrix(self):
         """walk through all the sensitivity matrices and concatenate as a single dataframe"""
         path = os.getcwd()
-        datapath = os.path.join(path, "../../../../Projekte/Vargehese/Sensis_3544_9")
+        datapath = os.path.join(path, "../inputs/sensitivity")
         fileList = [os.path.join(root, file) for root, dirs, files in os.walk(datapath) for file in files if
                     file.endswith('Sensitivities_Init_.csv')]
 

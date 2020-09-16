@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
-
 from FlexAgent import FlexAgent
-from AgentNeuralNet import AgentNeuralNet
 
 
 class DSM(FlexAgent):

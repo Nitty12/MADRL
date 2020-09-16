@@ -4,7 +4,7 @@ from WindGen import WG
 from HeatPump import HeatPump
 from BatteryStorage import BatStorage
 from DSM import DSM
-from AgentNeuralNet import AgentNeuralNet
+from AgentNeuralNet import MADDPGAgent, QMIX
 from SpotMarket import SpotMarket
 from DSO import DSO
 from Grid import Grid
@@ -43,12 +43,11 @@ if __name__ == '__main__':
     # TODO why it is not reproducible even though np is seeded?
     np.random.seed(0)
     tf.random.set_seed(0)
-    '''
-    generation is -ve qty and load is +ve qty
-    '''
+    """specify the algorithm - MADDPG, QMIX"""
+    alg = 'QMIX'
 
     agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, \
-    genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit()
+    genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit(alg)
     grid = Grid(numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
                          numCPU=20)
 
@@ -60,7 +59,7 @@ if __name__ == '__main__':
 
     # load the train Gym environment
     env = suite_gym.load("gym_LocalFlexMarketEnv:LocalFlexMarketEnv-v0",
-                         gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'alg': 'QMIX'})
+                         gym_kwargs={'SpotMarket': sm, 'DSO': dso, 'alg': alg})
     env.reset()
 
     # convert to tf environment
@@ -69,6 +68,8 @@ if __name__ == '__main__':
     agents = train_env.pyenv.envs[0].gym.agents
     nameList = [agent.id for agent in agents]
     typeList = [agent.type for agent in agents]
+    if alg == 'QMIX':
+        qmix = QMIX(nAgents=len(agents), time_step_spec=train_env.time_step_spec())
 
     replay_buffer = util.replayBufferInit(train_env)
     batch_size = 8
@@ -92,13 +93,18 @@ if __name__ == '__main__':
         time_step = train_env.reset()
         train_step_counter = tf.Variable(0, trainable=False)
 
-        # initialize the ddpg agents
+        # initialize the RL agents
         for node in networkDict:
             for type, network in networkDict[node].items():
                 """name of the first agent in that particular type in this node"""
                 name = nameDict[node][type][0]
-                network.hyperParameterInit(parameterDict)
-                network.initialize(train_env, train_step_counter, nameList.index(name))
+                if len(network)>1:
+                    for net in network:
+                        net.hyperParameterInit(parameterDict)
+                        net.initialize(train_env, train_step_counter, nameList.index(name))
+                else:
+                    network.hyperParameterInit(parameterDict)
+                    network.initialize(train_env, train_step_counter, nameList.index(name))
 
         """This is the data collection policy"""
         collect_policySteps = []
@@ -108,12 +114,24 @@ if __name__ == '__main__':
             agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
             for type, names in nameDict[agentNode].items():
                 if agentName in names:
-                    collect_policySteps.append(networkDict[agentNode][type].collect_policy.action)
-                    eval_policySteps.append(networkDict[agentNode][type].eval_policy.action)
-                    break
+                    if alg == 'MADDPG':
+                        collect_policySteps.append(networkDict[agentNode][type].collect_policy.action)
+                        eval_policySteps.append(networkDict[agentNode][type].eval_policy.action)
+                        break
+                    elif alg == 'QMIX':
+                        collect_policySteps.extend([QAgent.collect_policy.action for QAgent in networkDict[agentNode][type]])
+                        eval_policySteps.extend([QAgent.eval_policy.action for QAgent in networkDict[agentNode][type]])
+                        break
 
         # initialize trainer
-        networkList = [net for node in networkDict for net in networkDict[node].values()]
+        networkList = []
+        for node in networkDict:
+            for net in networkDict[node].values():
+                if len(net)>1:
+                    networkList.extend(net)
+                else:
+                    networkList.append(net)
+
         for net in networkList:
             # (Optional) Optimize by wrapping some of the code in a graph using TF function.
             net.agent.train = common.function(net.agent.train)
@@ -123,36 +141,41 @@ if __name__ == '__main__':
         for num_iter in tqdm.trange(1, num_iterations + 1):
             # Collect a few steps using collect_policy and save to the replay buffer.
             for _ in range(collect_steps_per_iteration):
-                util.collect_step(train_env, collect_policySteps, replay_buffer)
+                util.collect_step(train_env, collect_policySteps, replay_buffer, alg)
 
             # Sample a batch of data from the buffer and update the agent's network.
             experience, unused_info = next(iterator)
-            time_steps, policy_steps, next_time_steps, total_agents_target_actions, total_agents_main_actions = \
-                util.get_target_and_main_actions(experience, agents, nameDict, networkDict)
+            """total_agents_main and target are actions in case of MADDPG and Q values in case of QMIX"""
+            time_steps, policy_steps, next_time_steps, total_agents_target, total_agents_main = \
+                util.get_target_and_main_actions_or_values(experience, agents, nameDict, networkDict, alg)
 
             train_step_counter.assign_add(1)
 
             """training without multiprocessing"""
-            for i, agentName in enumerate(nameList):
-                agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
-                train_loss = 0
-                for type, names in nameDict[agentNode].items():
-                    if agentName in names:
-                        train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
-                                                                              total_agents_target_actions,
-                                                                              total_agents_main_actions,
-                                                                              index=i).loss
-                        break
-                step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
+            if alg == 'MADDPG':
+                for i, agentName in enumerate(nameList):
+                    agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+                    train_loss = 0
+                    for type, names in nameDict[agentNode].items():
+                        if agentName in names:
+                            train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
+                                                                                  total_agents_target,
+                                                                                  total_agents_main,
+                                                                                  index=i).loss
+                            break
+                    step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
+            elif alg == 'QMIX':
+                train_loss = qmix.train(time_steps, policy_steps, next_time_steps, total_agents_target,
+                                                                                  total_agents_main).loss
 
             """unpromising trials at the early stages of the training"""
-            intermediate_return = util.compute_avg_return(train_env, eval_policySteps, num_steps=2)
+            intermediate_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=2)
             trial.report(intermediate_return.sum(), num_iter)
             if trial.should_prune():
                 raise optuna.TrialPruned()
 
             if num_iter % eval_interval == 0:
-                avg_return = util.compute_avg_return(train_env, eval_policySteps, num_steps=2)
+                avg_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=2)
                 print('step: {0}, Avg Return: {1}'.format(num_iter, avg_return))
                 print("=====================================================================================")
                 joblib.dump(study, '../results/study.pkl')

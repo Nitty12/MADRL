@@ -28,7 +28,7 @@ class BatStorage(FlexAgent):
         self.lowFlexBidLimit = -1
         self.highFlexBidLimit = 1
         self.lowPriceLimit = 1
-        self.highPriceLimit = 5
+        self.highPriceLimit = 2
 
         self.penalizeTimes = []
         self.flexChangedEnergy = 0

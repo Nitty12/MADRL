@@ -221,9 +221,12 @@ class DdpgAgent(tf_agent.TFAgent):
 
       return common.Periodically(update, period, 'periodic_update_targets')
 
-  """Nitty: edited for centralized training of critic in ddpg"""
+  """Nitty: edited for centralized training of critic in ddpg
+            target = target actions for all agents 
+            main = main actions for all agents"""
   # def _train(self, experience, weights=None):
-  def _train(self, time_steps, policy_steps, next_time_steps, target_actions, main_actions, index, weights=None):
+  def _train(self, time_steps, policy_steps, next_time_steps,
+             target, main, index, weights):
     squeeze_time_dim = not self._actor_network.state_spec
     # time_steps, policy_steps, next_time_steps = (
     #     trajectory.experience_to_transitions(experience, squeeze_time_dim))
@@ -237,7 +240,7 @@ class DdpgAgent(tf_agent.TFAgent):
       tape.watch(trainable_critic_variables)
 
       """Nitty: edited for centralized training of critic"""
-      critic_loss = self.critic_loss(time_steps, actions, next_time_steps, target_actions, index,
+      critic_loss = self.critic_loss(time_steps, actions, next_time_steps, target, index,
                                      weights=weights, training=True)
       # critic_loss = self.critic_loss(time_steps, actions, next_time_steps,
       #                                weights=weights, training=True)
@@ -253,7 +256,7 @@ class DdpgAgent(tf_agent.TFAgent):
                                          'optimize.')
       tape.watch(trainable_actor_variables)
       """Nitty: edited for centralized training of critic"""
-      actor_loss = self.actor_loss(time_steps, main_actions, index, weights=weights, training=True)
+      actor_loss = self.actor_loss(time_steps, main, index, weights=weights, training=True)
       # actor_loss = self.actor_loss(time_steps, weights=weights, training=True)
 
     tf.debugging.check_numerics(actor_loss, 'Actor loss is inf or nan.')

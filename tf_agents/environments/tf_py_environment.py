@@ -150,6 +150,8 @@ class TFPyEnvironment(tf_environment.TFEnvironment):
     """Nitty: modifying to create obs_spec for using centralized critic with obs of all agents"""
     total_observation_spec = tensor_spec.from_spec(self._env.total_observation_spec())
     total_action_spec = tensor_spec.from_spec(self._env.total_action_spec())
+    total_qmix_observation_spec = tensor_spec.from_spec(self._env.total_qmix_observation_spec())
+    total_qmix_action_spec = tensor_spec.from_spec(self._env.total_qmix_action_spec())
 
     # super(TFPyEnvironment, self).__init__(time_step_spec,
     #                                       action_spec,
@@ -158,7 +160,9 @@ class TFPyEnvironment(tf_environment.TFEnvironment):
                                           action_spec,
                                           batch_size,
                                           total_observation_spec,
-                                          total_action_spec)
+                                          total_action_spec,
+                                          total_qmix_observation_spec,
+                                          total_qmix_action_spec)
 
     # Gather all the dtypes and shapes of the elements in time_step.
     self._time_step_dtypes = [

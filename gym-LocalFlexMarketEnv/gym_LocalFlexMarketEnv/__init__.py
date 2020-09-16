@@ -6,6 +6,6 @@ register(
     kwargs={
         'SpotMarket': None,
         'DSO': None,
-        'grid': None,
+        'alg': None,
     },
 )

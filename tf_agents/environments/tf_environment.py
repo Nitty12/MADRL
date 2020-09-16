@@ -116,8 +116,11 @@ class TFEnvironment(object):
   """
   # def __init__(self, time_step_spec=None, action_spec=None, batch_size=1):
   """Nitty: modifying to create obs_spec for using centralized critic with obs of all agents"""
-  def __init__(self, time_step_spec=None, action_spec=None, batch_size=1, total_observation_spec=None,
-               total_action_spec=None):
+  def __init__(self, time_step_spec=None, action_spec=None, batch_size=1,
+               total_observation_spec=None,
+               total_action_spec=None,
+               total_qmix_observation_spec= None,
+               total_qmix_action_spec = None):
     """Initializes the environment.
 
     Meant to be called by subclass constructors.
@@ -138,6 +141,8 @@ class TFEnvironment(object):
     """Nitty: modifying to create obs_spec for using centralized critic with obs of all agents"""
     self._total_observation_spec = total_observation_spec
     self._total_action_spec = total_action_spec
+    self._total_qmix_observation_spec = total_qmix_observation_spec
+    self._total_qmix_action_spec = total_qmix_action_spec
 
   def time_step_spec(self):
     """Describes the `TimeStep` specs of Tensors returned by `step()`.
@@ -177,6 +182,13 @@ class TFEnvironment(object):
 
   def total_action_spec(self):
     return self._total_action_spec
+
+  def total_qmix_observation_spec(self):
+    return self._total_qmix_observation_spec
+
+  def total_qmix_action_spec(self):
+    return self._total_qmix_action_spec
+
 
   @property
   def batched(self):

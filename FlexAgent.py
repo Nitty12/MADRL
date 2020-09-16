@@ -1,4 +1,3 @@
-from AgentNeuralNet import AgentNeuralNet
 import numpy as np
 import pandas as pd
 
@@ -184,18 +183,24 @@ class FlexAgent:
     def setMCP(self, price):
         self.MCP = price
 
-    def getActionLimits(self):
+    def getActionLimits(self, alg):
         """returns the min and max limits for the action of the agent"""
         # TODO will the same space work for both states?
         """DSM, eV, PV and wind have different action space for flex bid
             eg, PV flex bid will be positive to decrease the spot dispatched (-ve) amounts"""
-        minSpotBidArray = np.full(self.dailySpotTime, self.lowSpotBidLimit, dtype=float)
-        maxSpotBidArray = np.full(self.dailySpotTime, self.highSpotBidLimit, dtype=float)
-        minFlexBidArray = np.full(self.dailySpotTime, self.lowFlexBidLimit, dtype=float)
-        maxFlexBidArray = np.full(self.dailySpotTime, self.highFlexBidLimit, dtype=float)
+        if alg =='QMIX':
+            stepSize = 20
+            dataType = int
+        else:
+            stepSize = 1
+            dataType = float
+        minSpotBidArray = np.full(self.dailySpotTime, stepSize*self.lowSpotBidLimit, dtype=dataType)
+        maxSpotBidArray = np.full(self.dailySpotTime, stepSize*self.highSpotBidLimit, dtype=dataType)
+        minFlexBidArray = np.full(self.dailySpotTime, stepSize*self.lowFlexBidLimit, dtype=dataType)
+        maxFlexBidArray = np.full(self.dailySpotTime, stepSize*self.highFlexBidLimit, dtype=dataType)
 
-        minPriceArray = np.full(self.dailySpotTime, self.lowPriceLimit, dtype=float)
-        maxPriceArray = np.full(self.dailySpotTime, self.highPriceLimit, dtype=float)
+        minPriceArray = np.full(self.dailySpotTime, stepSize*self.lowPriceLimit, dtype=dataType)
+        maxPriceArray = np.full(self.dailySpotTime, stepSize*self.highPriceLimit, dtype=dataType)
 
         return np.hstack((minSpotBidArray, minFlexBidArray, minPriceArray)), \
                np.hstack((maxSpotBidArray, maxFlexBidArray, maxPriceArray))
@@ -210,13 +215,13 @@ class FlexAgent:
         """
         # TODO add reqd flex times?, add weekend vs weekdays?
         if self.day == 0:
-            spotDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
-            flexDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
+            spotDispatch = np.full(self.dailySpotTime, 0)
+            flexDispatch = np.full(self.dailySpotTime, 0)
         else:
             prevDayTimes = np.arange((self.day-1) * self.dailySpotTime, self.day * self.dailySpotTime)
 
-            spotDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
-            flexDispatch = np.full(self.dailySpotTime, 0, dtype=np.float32)
+            spotDispatch = np.full(self.dailySpotTime, 0)
+            flexDispatch = np.full(self.dailySpotTime, 0)
 
             dispatchedMask = self.spotBid.loc[self.spotBid['time'].isin(prevDayTimes), 'dispatched'].values
             spotDispatch[dispatchedMask] = self.spotBid.loc[self.spotBid['time'].isin(prevDayTimes),

@@ -77,6 +77,8 @@ class BatchedPyEnvironment(py_environment.PyEnvironment):
     """Nitty: modifying to create obs_spec for using centralized critic with obs of all agents"""
     self._total_observation_spec = self._envs[0].total_observation_spec()
     self._total_action_spec = self._envs[0].total_action_spec()
+    self._total_qmix_observation_spec = self._envs[0].total_qmix_observation_spec()
+    self._total_qmix_action_spec = self._envs[0].total_qmix_action_spec()
 
     if any(env.action_spec() != self._action_spec for env in self._envs):
       raise ValueError(
@@ -118,6 +120,13 @@ class BatchedPyEnvironment(py_environment.PyEnvironment):
 
   def total_action_spec(self):
     return self._total_action_spec
+
+  def total_qmix_observation_spec(self):
+    return self._total_qmix_observation_spec
+
+  def total_qmix_action_spec(self):
+    return self._total_qmix_action_spec
+
 
   def action_spec(self):
     return self._action_spec

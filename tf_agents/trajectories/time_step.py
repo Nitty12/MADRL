@@ -358,3 +358,21 @@ def get_individual_time_step(time_step, index):
     reward=time_step.reward[:, index],
     discount=time_step.discount,
     observation=time_step.observation[index])
+
+def get_individual_qmix_time_step_spec(time_step_spec):
+  observation = tensor_spec.BoundedTensorSpec((50,), tf.float32, minimum=-np.inf, maximum=+np.inf, name='observation')
+  return TimeStep(
+    step_type=tensor_spec.TensorSpec([], tf.int32, name='step_type'),
+    reward=tensor_spec.TensorSpec([], tf.float32, name='reward'),
+    discount=tensor_spec.BoundedTensorSpec(
+      [], tf.float32, minimum=0.0, maximum=1.0, name='discount'),
+    observation=observation)
+
+def get_individual_qmix_time_step(time_step, index, time):
+  indices = tf.convert_to_tensor(list(range(0,48))+[48+time]+[71])
+  observation = tf.gather(time_step.observation[index//3], indices=indices, axis=-1)
+  return TimeStep(
+    step_type=time_step.step_type,
+    reward=time_step.reward[:, index//3],
+    discount=time_step.discount,
+    observation=observation)

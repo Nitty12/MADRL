@@ -472,7 +472,7 @@ def from_episode(observation, action, policy_info, reward, discount=None):
 
 # def from_transition(time_step, action_step, next_time_step):
 """Nitty: update for joint action trajectory"""
-def from_transition(time_step, action_step, next_time_step, joint_action = None):
+def from_transition(time_step, action_step, next_time_step, alg, joint_action = None):
   """Returns a `Trajectory` given transitions.
 
   `from_transition` is used by a driver to convert sequence of transitions into
@@ -494,18 +494,28 @@ def from_transition(time_step, action_step, next_time_step, joint_action = None)
       transition.
   """
   if joint_action:
-      """action_step is a list of all PolicySteps
-            PolicyStep(action=<tf.Tensor>, state=(), info=())"""
-      total_action = [act.action for act in action_step]
-      total_info = [act.info for act in action_step]
-      return Trajectory(
-          step_type=time_step.step_type,
-          observation=time_step.observation,
-          action=tuple(total_action),
-          policy_info=tuple(),
-          next_step_type=next_time_step.step_type,
-          reward=next_time_step.reward,
-          discount=next_time_step.discount)
+      if alg=='QMIX':
+          return Trajectory(
+              step_type=time_step.step_type,
+              observation=time_step.observation,
+              action=tuple(action_step),
+              policy_info=tuple(),
+              next_step_type=next_time_step.step_type,
+              reward=next_time_step.reward,
+              discount=next_time_step.discount)
+      elif alg=='MADDPG':
+          """action_step is a list of all PolicySteps
+                PolicyStep(action=<tf.Tensor>, state=(), info=())"""
+          total_action = [act.action for act in action_step]
+          total_info = [act.info for act in action_step]
+          return Trajectory(
+              step_type=time_step.step_type,
+              observation=time_step.observation,
+              action=tuple(total_action),
+              policy_info=tuple(),
+              next_step_type=next_time_step.step_type,
+              reward=next_time_step.reward,
+              discount=next_time_step.discount)
 
   return Trajectory(
       step_type=time_step.step_type,
