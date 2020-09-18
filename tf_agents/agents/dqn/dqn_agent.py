@@ -267,10 +267,10 @@ class DqnAgent(tf_agent.TFAgent):
 
     # TODO(b/119321125): Disable this once index_with_actions supports
     # negative-valued actions.
-    # if not all(spec.minimum == 0 for spec in flat_action_spec):
-    #   raise ValueError(
-    #       'Action specs should have minimum of 0, but saw: {0}'.format(
-    #           [spec.minimum for spec in flat_action_spec]))
+    if not all(spec.minimum == 0 for spec in flat_action_spec):
+      raise ValueError(
+          'Action specs should have minimum of 0, but saw: {0}'.format(
+              [spec.minimum for spec in flat_action_spec]))
 
   def _setup_policy(self, time_step_spec, action_spec,
                     boltzmann_temperature, emit_log_probability):

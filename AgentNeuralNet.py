@@ -103,11 +103,14 @@ class MADDPGAgent:
 class QMIXAgent:
     def __init__(self, type):
         self.fc_layer_params = (100,)
+        self.dropout_layer_params = None
         self.learning_rate = 1e-3
         self.type = type
 
     def hyperParameterInit(self, parameterDict):
         self.learning_rate = parameterDict['learning_rate']
+        self.fc_layer_params = parameterDict['fc_layer_params']
+        self.dropout_layer_params = parameterDict['fc_dropout_layer_params']
 
     def initialize(self, train_env, train_step_counter, index):
         if self.type == 'sbm_spot':
@@ -121,11 +124,12 @@ class QMIXAgent:
         self.QNetwork = q_network.QNetwork(
             input_tensor_spec=obs_spec,
             action_spec=action_spec,
-            fc_layer_params=self.fc_layer_params)
+            fc_layer_params=self.fc_layer_params,
+            dropout_layer_params=self.dropout_layer_params)
         self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate)
-        individual_qmix_time_step = ts.get_individual_qmix_time_step_spec(train_env.time_step_spec())
+        individual_qmix_time_step_spec = ts.get_individual_qmix_time_step_spec(train_env.time_step_spec())
         self.agent = dqn_agent.DqnAgent(
-            individual_qmix_time_step,
+            individual_qmix_time_step_spec,
             action_spec,
             q_network=self.QNetwork,
             optimizer=self.optimizer,
@@ -136,6 +140,38 @@ class QMIXAgent:
         self.collect_policy = self.agent.collect_policy
         self.random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
                                                              train_env.action_spec())
+
+    def _compute_q_values(self, time_steps, actions, index, time, training=False):
+        """spot and flex dispatches of last day (48) + MCP current hour + current state (spot/ flex)"""
+        obs_indices = tf.convert_to_tensor(list(range(0, 48)) + [48 + time] + [71])
+        observation = tf.gather(time_steps.observation[index], indices=obs_indices, axis=-1)
+        network_observation = observation
+        q_values, _ = self.agent._q_network(network_observation, time_steps.step_type,
+                                      training=training)
+        # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
+        # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
+        multi_dim_actions = self.agent._action_spec.shape.rank > 0
+        actions = tf.reshape(actions, [-1, 1])
+        return common.index_with_actions(q_values, tf.cast(actions, dtype=tf.int32),
+                                         multi_dim_actions=multi_dim_actions)
+
+    def _compute_next_q_values(self, next_time_steps, index, time):
+        """spot and flex dispatches of last day (48) + MCP current hour + current state (spot/ flex)"""
+        obs_indices = tf.convert_to_tensor(list(range(0, 48)) + [48 + time] + [71])
+        observation = tf.gather(next_time_steps.observation[index], indices=obs_indices, axis=-1)
+        network_observation = observation
+        next_target_q_values, _ = self.agent._target_q_network(network_observation, next_time_steps.step_type)
+        batch_size = (next_target_q_values.shape[0] or tf.shape(next_target_q_values)[0])
+        dummy_state = self.agent._target_greedy_policy.get_initial_state(batch_size)
+        # Find the greedy actions using our target greedy policy. This ensures that
+        # action constraints are respected and helps centralize the greedy logic.
+        next_individual_qmix_time_step = ts.get_individual_qmix_time_step(next_time_steps, index, time)
+        greedy_actions = self.agent._target_greedy_policy.action(next_individual_qmix_time_step, dummy_state).action
+        # Handle action_spec.shape=(), and shape=(1,) by using the multi_dim_actions
+        # param. Note: assumes len(tf.nest.flatten(action_spec)) == 1.
+        multi_dim_actions = tf.nest.flatten(self.agent._action_spec)[0].shape.rank > 0
+        return common.index_with_actions(next_target_q_values, greedy_actions,
+                                         multi_dim_actions=multi_dim_actions)
 
 
 class QMIXMixingNetwork(network.Network):
@@ -155,7 +191,6 @@ class QMIXMixingNetwork(network.Network):
             state_spec=(),
             name=name)
 
-        # Replace mlp_layers with encoding networks.
         self.hyper_w1 = utils.hyper_layers(
             conv_layer_params,
             fc_layer_params['hyper_w1'],
@@ -195,59 +230,84 @@ class QMIXMixingNetwork(network.Network):
             activation_needed=True)
 
     def call(self, q_values, observations, step_type=(), network_state=(), training=False):
-        del step_type  # unused.
-        observations = tf.nest.flatten(observations)
-        w1 = tf.math.abs(self.hyper_w1(observations))
-        b1 = self.hyper_b1(observations)
+        """convert to joint observation"""
+        observations = tf.concat(observations, axis=-1)
+        q_values = tf.reshape(q_values, [-1,1,self.nAgents])
+
+        output = observations
+        for layer in self.hyper_w1:
+            output = layer(output, training=training)
+        w1 = tf.math.abs(output)
+
+        output = observations
+        for layer in self.hyper_b1:
+            output = layer(output, training=training)
+        b1 = output
+
         w1 = tf.reshape(w1, [-1, self.nAgents, self.qmix_hidden_dim])
         b1 = tf.reshape(b1, [-1, 1, self.qmix_hidden_dim])
         hidden = tf.keras.activations.elu((tf.matmul(q_values, w1) + b1))
 
-        w2 = tf.math.abs(self.hyper_w2(observations))
-        b2 = self.hyper_b2(observations)
+        output = observations
+        for layer in self.hyper_w2:
+            output = layer(output, training=training)
+        w2 = tf.math.abs(output)
+
+        output = observations
+        for layer in self.hyper_b2:
+            output = layer(output, training=training)
+        b2 = output
+
         w2 = tf.reshape(w2, [-1, self.qmix_hidden_dim, 1])
         b2 = tf.reshape(b2, [-1, 1, 1])
 
         output = tf.matmul(hidden, w2) + b2
-        return output
+        return output, network_state
 
 
 class QMIX():
-    def __init__(self, nAgents, time_step_spec,
+    def __init__(self, nAgents, time_step_spec, train_step_counter,
                  debug_summaries=False, summarize_grads_and_vars=False, enable_summaries=True):
-        hyper_hidden_dim = 256
-        qmix_hidden_dim = 64
-        learning_rate = 0.001
-        fc_layer_params = {}
-        dropout_layer_params = {}
-        activation_fn = {}
-        fc_layer_params['hyper_w1'] = (hyper_hidden_dim, nAgents * qmix_hidden_dim)
-        dropout_layer_params['hyper_w1'] = None
-        activation_fn['hyper_w1'] = tf.keras.activations.relu
-        fc_layer_params['hyper_w2'] = (hyper_hidden_dim, qmix_hidden_dim)
-        dropout_layer_params['hyper_w2'] = None
-        activation_fn['hyper_w2'] = tf.keras.activations.relu
-        fc_layer_params['hyper_b1'] = (nAgents * qmix_hidden_dim,)
-        dropout_layer_params['hyper_b1'] = None
-        fc_layer_params['hyper_b2'] = (qmix_hidden_dim, 1)
-        dropout_layer_params['hyper_b2'] = None
-        activation_fn['hyper_b2'] = tf.keras.activations.relu
-        self.QMIXNet = QMIXMixingNetwork(fc_layer_params=fc_layer_params,
-                                         dropout_layer_params=dropout_layer_params,
-                                         activation_fn=activation_fn,
-                                         nAgents=nAgents, qmix_hidden_dim=qmix_hidden_dim)
-        self.TargetQMIXNet = copy.deepcopy(self.QMIXNet)
+        self.hyper_hidden_dim = 256
+        self.qmix_hidden_dim = 64
+        self.learning_rate = 0.001
+        self.nAgents =nAgents
         self.time_step_spec = time_step_spec
         self._epsilon_greedy = 0.1
         self._n_step_update = 1
-        self._optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
         self._td_errors_loss_fn = common.element_wise_squared_loss
         self._gamma = 0.99
         self._update_target = self._get_target_updater(tau=0.01, period=10)
-        self.train_step_counter = None
+        self.train_step_counter = train_step_counter
         self.debug_summaries = debug_summaries
         self.summarize_grads_and_vars = summarize_grads_and_vars
         self.enable_summaries = enable_summaries
+
+    def hyperParameterInit(self, parameterDict):
+        self.hyper_hidden_dim = parameterDict['hyper_hidden_dim']
+        self.qmix_hidden_dim = parameterDict['qmix_hidden_dim']
+        self.learning_rate = parameterDict['qmix_learning_rate']
+        fc_layer_params = {}
+        dropout_layer_params = {}
+        activation_fn = {}
+        fc_layer_params['hyper_w1'] = (self.hyper_hidden_dim, self.nAgents * self.qmix_hidden_dim)
+        dropout_layer_params['hyper_w1'] = None
+        activation_fn['hyper_w1'] = tf.keras.activations.relu
+        fc_layer_params['hyper_w2'] = (self.hyper_hidden_dim, self.qmix_hidden_dim)
+        dropout_layer_params['hyper_w2'] = None
+        activation_fn['hyper_w2'] = tf.keras.activations.relu
+        fc_layer_params['hyper_b1'] = (self.qmix_hidden_dim,)
+        dropout_layer_params['hyper_b1'] = None
+        fc_layer_params['hyper_b2'] = (self.qmix_hidden_dim, 1)
+        dropout_layer_params['hyper_b2'] = None
+        activation_fn['hyper_b2'] = tf.keras.activations.relu
+        self._optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate)
+        self.QMIXNet = QMIXMixingNetwork(fc_layer_params=fc_layer_params,
+                                         dropout_layer_params=dropout_layer_params,
+                                         activation_fn=activation_fn,
+                                         nAgents=self.nAgents, qmix_hidden_dim=self.qmix_hidden_dim)
+        self.TargetQMIXNet = copy.deepcopy(self.QMIXNet)
+
 
     def _get_target_updater(self, tau=1.0, period=1):
         """Performs a soft update of the target network parameters.
@@ -265,8 +325,7 @@ class QMIX():
 
             return common.Periodically(update, period, 'periodic_update_targets')
 
-    def train(self, time_steps, policy_steps, next_time_steps,
-              target_values, main_values):
+    def train(self, time_steps, policy_steps, next_time_steps, target_values, main_values):
         with tf.GradientTape() as tape:
             loss_info = self._loss(
                 time_steps, policy_steps, next_time_steps,
@@ -292,10 +351,13 @@ class QMIX():
               weights=None,
               training=False):
         with tf.name_scope('loss'):
-            q_total = self.QMIXNet(main_values, time_steps.observation, training=training)
-            target_q_total = self.TargetQMIXNet(target_values, next_time_steps.observation, training=training)
-
-            td_targets = tf.stop_gradient(next_time_steps.reward + gamma * next_time_steps.discount * target_q_total)
+            q_total, _ = self.QMIXNet(main_values, time_steps.observation, training=training)
+            q_total = tf.squeeze(q_total)
+            target_q_total, _ = self.TargetQMIXNet(target_values, next_time_steps.observation, training=training)
+            target_q_total = tf.squeeze(target_q_total)
+            """using the mean reward for all the agents"""
+            mean_reward = tf.reduce_mean(next_time_steps.reward, axis=1)
+            td_targets = tf.stop_gradient(mean_reward + gamma * next_time_steps.discount * target_q_total)
 
             valid_mask = tf.cast(~time_steps.is_last(), tf.float32)
             td_error = valid_mask * (td_targets - q_total)

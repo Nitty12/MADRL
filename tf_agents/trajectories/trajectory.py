@@ -472,7 +472,7 @@ def from_episode(observation, action, policy_info, reward, discount=None):
 
 # def from_transition(time_step, action_step, next_time_step):
 """Nitty: update for joint action trajectory"""
-def from_transition(time_step, action_step, next_time_step, alg, joint_action = None):
+def from_transition(time_step, action_step, next_time_step, alg = None, joint_action = None):
   """Returns a `Trajectory` given transitions.
 
   `from_transition` is used by a driver to convert sequence of transitions into

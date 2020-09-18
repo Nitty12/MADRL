@@ -59,7 +59,7 @@ def agentsInit(alg):
 
     agentsDict = {}
     """the number of agents in each type to consider as flexibility"""
-    numAgents = 1
+    numAgents = 5
     """negate the PV and Wind timeseries to make generation qty -ve"""
     for name in genSeriesPV.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
@@ -274,24 +274,44 @@ def one_step(environment, policySteps, alg):
     total_agents_action = []
     time_step = environment.current_time_step()
     if alg == 'QMIX':
+        """return the normal integer actions to save in replay buffer"""
+        total_agents_integer_action = []
+        individual_agent_integer_action = []
         individual_agent_action = []
+        """for correcting the actions back to possible negative values"""
+        agent_index = 0
+        action_type = 0
         for i, policyStep in enumerate(policySteps):
+            action_type += 1
+            if action_type == 1:
+                correction = environment.pyenv.envs[0].agents[agent_index].lowSpotBidLimit
+            elif action_type == 2:
+                correction = environment.pyenv.envs[0].agents[agent_index].lowFlexBidLimit
+            elif action_type == 3:
+                correction = environment.pyenv.envs[0].agents[agent_index].lowPriceLimit
+                action_type = 0
+            else:
+                correction = 0
             for t in range(24):
                 individual_qmix_time_step = ts.get_individual_qmix_time_step(time_step, index=i, time=t)
                 action = policyStep(individual_qmix_time_step).action
-                individual_agent_action.append(tf.cast(action, tf.float32)/20.0)
+                individual_agent_integer_action.append(action)
+                individual_agent_action.append(tf.cast(action + correction, tf.float32)/20.0)
             if (i+1)%3 == 0:
+                agent_index += 1
                 total_agents_action.append(tf.concat(list(individual_agent_action), axis=-1))
+                total_agents_integer_action.append(tf.concat(list(individual_agent_integer_action), axis=-1))
                 individual_agent_action = []
-
+                individual_agent_integer_action = []
         next_time_step = environment.step(tuple(total_agents_action))
+        return time_step, total_agents_integer_action, next_time_step
     elif alg == 'MADDPG':
         for i, policyStep in enumerate(policySteps):
             individual_time_step = ts.get_individual_time_step(time_step, i)
             action = policyStep(individual_time_step)
             total_agents_action.append(action)
         next_time_step = environment.step(tuple(total_agents_action))
-    return time_step, total_agents_action, next_time_step
+        return time_step, total_agents_action, next_time_step
 
 
 def compute_avg_return(environment, policySteps, alg, num_steps=10):
@@ -312,10 +332,33 @@ def collect_step(environment, policySteps, buffer, alg):
     buffer.add_batch(traj)
     # tf_metrics.AverageReturnMetric(traj)
 
+def get_target_and_main_actions(experience, agents, nameDict, networkDict):
+    """MADDPG - get the actions from the target actor network and main actor network of all the agents"""
+    total_agents_target_actions = []
+    total_agents_main_actions = []
+    time_steps, policy_steps, next_time_steps = (
+        trajectory.experience_to_transitions(experience, squeeze_time_dim=True))
+    for i, flexAgent in enumerate(agents):
+        for node in nameDict:
+            target_action = None
+            for type, names in nameDict[node].items():
+                if flexAgent.id in names:
+                    target_action, _ = networkDict[node][type].agent._target_actor_network(next_time_steps.observation[i],
+                                                                    next_time_steps.step_type,
+                                                                    training=False)
+                    main_action, _ = networkDict[node][type].agent._actor_network(time_steps.observation[i],
+                                                                       time_steps.step_type,
+                                                                       training=True)
+                    break
+            if target_action is not None:
+                break
+        total_agents_target_actions.append(target_action)
+        total_agents_main_actions.append(main_action)
+    return time_steps, policy_steps, next_time_steps, \
+           tuple(total_agents_target_actions), tuple(total_agents_main_actions)
 
-def get_target_and_main_actions_or_values(experience, agents, nameDict, networkDict, alg):
-    """MADDPG - get the actions from the target actor network and main actor network of all the agents
-        QMIX - get the Q values from the target network and main network of all the agents"""
+def get_target_and_main_values(experience, agents, nameDict, networkDict):
+    """QMIX - get the Q values from the target network and main network of all the agents"""
     total_agents_target = []
     total_agents_main = []
     time_steps, policy_steps, next_time_steps = (
@@ -325,29 +368,26 @@ def get_target_and_main_actions_or_values(experience, agents, nameDict, networkD
             target = None
             for type, names in nameDict[node].items():
                 if flexAgent.id in names:
-                    if alg=='MADDPG':
-                        target, _ = networkDict[node][type].agent._target_actor_network(next_time_steps.observation[i],
-                                                                        next_time_steps.step_type,
-                                                                        training=False)
-                        main, _ = networkDict[node][type].agent._actor_network(time_steps.observation[i],
-                                                                           time_steps.step_type,
-                                                                           training=True)
-                        break
-                    elif alg=='QMIX':
-                        target, _ = networkDict[node][type].agent._target_q_network(next_time_steps.observation[i],
-                                                                        next_time_steps.step_type,
-                                                                        training=False)
-                        main, _ = networkDict[node][type].agent._q_network(time_steps.observation[i],
-                                                                           time_steps.step_type,
-                                                                           training=True)
-                        break
+                    target = []
+                    main = []
+                    for net in networkDict[node][type]:
+                        action_index = -1
+                        for t in range(24):
+                            action_index += 1
+                            actions = tf.gather(policy_steps.action[i], indices=action_index, axis=-1)
+                            individual_target = net._compute_next_q_values(next_time_steps, index=i, time=t)
+                            individual_main = net._compute_q_values(time_steps, actions,
+                                                                       index=i, time=t, training=True)
+                            target.append(tf.reshape(individual_target, [-1,1]))
+                            main.append(tf.reshape(individual_main, [-1,1]))
+                    break
             if target is not None:
                 break
-        total_agents_target.append(target)
-        total_agents_main.append(main)
-    return time_steps, policy_steps, next_time_steps, \
-           tuple(total_agents_target), tuple(total_agents_main)
-
+        total_agents_target.append(tf.concat(target, -1))
+        total_agents_main.append(tf.concat(main, -1))
+    total_agents_target = tf.concat(total_agents_target, -1)
+    total_agents_main = tf.concat(total_agents_main, -1)
+    return time_steps, policy_steps, next_time_steps, total_agents_target, total_agents_main
 
 def checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_counter):
     """to save and restore the trained RL agents"""
@@ -410,42 +450,106 @@ def trainLoop(agentIndexAndName, nameDict, networkDict, time_steps, policy_steps
     return loss
 
 
-def hyperParameterOpt(trial):
+def hyperParameterOpt(trial, alg):
     """hyperparameter optimization with optuna"""
     parameterDict = {}
-    parameterDict['learning_rate'] = trial.suggest_float("adam_learning_rate", 1e-5, 1e-1)
-    parameterDict['discount_factor'] = trial.suggest_float('discount_factor', 0.95, 0.999)
+    if alg == 'MADDPG':
+        parameterDict['learning_rate'] = trial.suggest_float("adam_learning_rate", 1e-5, 1e-1)
+        parameterDict['discount_factor'] = trial.suggest_float('discount_factor', 0.95, 0.999)
 
-    parameterDict['actor_activation_fn'] = trial.suggest_categorical('actor_activation_fn',
-                                                         ['relu', 'leaky_relu'])
-    parameterDict['critic_activation_fn'] = trial.suggest_categorical('critic_activation_fn',
-                                                         ['relu', 'leaky_relu'])
+        parameterDict['actor_activation_fn'] = trial.suggest_categorical('actor_activation_fn',
+                                                             ['relu', 'leaky_relu'])
+        parameterDict['critic_activation_fn'] = trial.suggest_categorical('critic_activation_fn',
+                                                             ['relu', 'leaky_relu'])
 
-    parameterDict['fc_layer_params_actor'] = []
-    parameterDict['fc_dropout_layer_params_actor'] = []
-    actor_n_layers = trial.suggest_int('actor_n_layers', 1, 3)
-    for i in range(actor_n_layers):
-        num_hidden = trial.suggest_int("actor_n_units_L{}".format(i+1), 50, 300)
-        dropout_rate = trial.suggest_float("actor_dropout_rate_L{}".format(i+1), 0, 0.5)
-        parameterDict['fc_layer_params_actor'].append(num_hidden)
-        parameterDict['fc_dropout_layer_params_actor'].append(dropout_rate)
+        parameterDict['fc_layer_params_actor'] = []
+        parameterDict['fc_dropout_layer_params_actor'] = []
+        actor_n_layers = trial.suggest_int('actor_n_layers', 1, 3)
+        for i in range(actor_n_layers):
+            num_hidden = trial.suggest_int("actor_n_units_L{}".format(i+1), 50, 300)
+            dropout_rate = trial.suggest_float("actor_dropout_rate_L{}".format(i+1), 0, 0.5)
+            parameterDict['fc_layer_params_actor'].append(num_hidden)
+            parameterDict['fc_dropout_layer_params_actor'].append(dropout_rate)
 
-    parameterDict['fc_layer_params_critic_obs'] = []
-    parameterDict['fc_dropout_layer_params_critic_obs'] = []
-    critic_obs_n_layers = trial.suggest_int('critic_obs_n_layers', 1, 2)
-    for i in range(critic_obs_n_layers):
-        num_hidden = trial.suggest_int("critic_obs_n_units_L{}".format(i+1), 50, 300)
-        dropout_rate = trial.suggest_float("critic_obs_dropout_rate_L{}".format(i+1), 0, 0.5)
-        parameterDict['fc_layer_params_critic_obs'].append(num_hidden)
-        parameterDict['fc_dropout_layer_params_critic_obs'].append(dropout_rate)
+        parameterDict['fc_layer_params_critic_obs'] = []
+        parameterDict['fc_dropout_layer_params_critic_obs'] = []
+        critic_obs_n_layers = trial.suggest_int('critic_obs_n_layers', 1, 2)
+        for i in range(critic_obs_n_layers):
+            num_hidden = trial.suggest_int("critic_obs_n_units_L{}".format(i+1), 50, 300)
+            dropout_rate = trial.suggest_float("critic_obs_dropout_rate_L{}".format(i+1), 0, 0.5)
+            parameterDict['fc_layer_params_critic_obs'].append(num_hidden)
+            parameterDict['fc_dropout_layer_params_critic_obs'].append(dropout_rate)
 
-    parameterDict['fc_layer_params_critic_merged'] = []
-    parameterDict['fc_dropout_layer_params_critic_merged'] = []
-    critic_merged_n_layers = trial.suggest_int('critic_merged_n_layers', 1, 2)
-    for i in range(critic_merged_n_layers):
-        num_hidden = trial.suggest_int("critic_merged_n_units_L{}".format(i+1), 50, 300)
-        dropout_rate = trial.suggest_float("critic_merged_dropout_rate_L{}".format(i+1), 0, 0.5)
-        parameterDict['fc_layer_params_critic_merged'].append(num_hidden)
-        parameterDict['fc_dropout_layer_params_critic_merged'].append(dropout_rate)
+        parameterDict['fc_layer_params_critic_merged'] = []
+        parameterDict['fc_dropout_layer_params_critic_merged'] = []
+        critic_merged_n_layers = trial.suggest_int('critic_merged_n_layers', 1, 2)
+        for i in range(critic_merged_n_layers):
+            num_hidden = trial.suggest_int("critic_merged_n_units_L{}".format(i+1), 50, 300)
+            dropout_rate = trial.suggest_float("critic_merged_dropout_rate_L{}".format(i+1), 0, 0.5)
+            parameterDict['fc_layer_params_critic_merged'].append(num_hidden)
+            parameterDict['fc_dropout_layer_params_critic_merged'].append(dropout_rate)
+
+    elif alg == 'QMIX':
+        parameterDict['learning_rate'] = trial.suggest_float("adam_learning_rate", 1e-5, 1e-1)
+        parameterDict['fc_layer_params'] = []
+        parameterDict['fc_dropout_layer_params'] = []
+        n_layers = trial.suggest_int('n_layers', 1, 2)
+        for i in range(n_layers):
+            num_hidden = trial.suggest_int("n_units_L{}".format(i+1), 50, 300)
+            dropout_rate = trial.suggest_float("dropout_rate_L{}".format(i+1), 0, 0.5)
+            parameterDict['fc_layer_params'].append(num_hidden)
+            parameterDict['fc_dropout_layer_params'].append(dropout_rate)
+
+        parameterDict['hyper_hidden_dim'] = trial.suggest_int('hyper_hidden_dim', 100, 750)
+        parameterDict['qmix_hidden_dim'] = trial.suggest_int('qmix_hidden_dim', 100, 750)
+        parameterDict['qmix_learning_rate'] = trial.suggest_float("qmix_adam_learning_rate", 1e-5, 1e-1)
 
     return parameterDict
+
+def RLAgentInit(train_env, networkDict, nameDict, nameList, parameterDict, train_step_counter):
+    for node in networkDict:
+        for type, network in networkDict[node].items():
+            """name of the first agent in that particular type in this node"""
+            name = nameDict[node][type][0]
+            if isinstance(network, list):
+                for net in network:
+                    net.hyperParameterInit(parameterDict)
+                    net.initialize(train_env, train_step_counter, nameList.index(name))
+            else:
+                network.hyperParameterInit(parameterDict)
+                network.initialize(train_env, train_step_counter, nameList.index(name))
+
+def getPolicies(networkDict, nameDict, nameList, alg):
+    """This is the data collection policy"""
+    collect_policySteps = []
+    """This is the evaluation policy"""
+    eval_policySteps = []
+    for agentName in nameList:
+        agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+        for type, names in nameDict[agentNode].items():
+            if agentName in names:
+                if alg == 'MADDPG':
+                    collect_policySteps.append(networkDict[agentNode][type].collect_policy.action)
+                    eval_policySteps.append(networkDict[agentNode][type].eval_policy.action)
+                    break
+                elif alg == 'QMIX':
+                    collect_policySteps.extend([QAgent.collect_policy.action for QAgent in networkDict[agentNode][type]])
+                    eval_policySteps.extend([QAgent.eval_policy.action for QAgent in networkDict[agentNode][type]])
+                    break
+    return collect_policySteps, eval_policySteps
+
+
+def initializeTrainer(networkDict):
+    # initialize trainer
+    networkList = []
+    for node in networkDict:
+        for net in networkDict[node].values():
+            if isinstance(net, list):
+                networkList.extend(net)
+            else:
+                networkList.append(net)
+    for net in networkList:
+        # (Optional) Optimize by wrapping some of the code in a graph using TF function.
+        net.agent.train = common.function(net.agent.train)
+        # Reset the train step
+        net.agent.train_step_counter.assign(0)

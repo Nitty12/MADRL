@@ -17,14 +17,12 @@ class LocalFlexMarketEnv(gym.Env):
         self.nAgents = len(self.SpotMarket.participants)
         self.agents = self.SpotMarket.participants
         self.time = 0
-        """If needed change the limit of rewards here:
-        """
+        """If needed change the limit of rewards here:"""
         self.reward_range = (-float('inf'), float('inf'))
 
         # to be used to alternate between spot and flex states
         self.spotState = True
 
-        # configure spaces
         """ action is the hourly strategic bid multiplier(sbm) and price multiplier (spm) - float values
             the bid qty is given by sbm*maxPower
                 if sbm = 0, the bidder does not bid
@@ -36,7 +34,6 @@ class LocalFlexMarketEnv(gym.Env):
             since there cant be 2 action space spec.
             Currently, the action space has sbm_spot - 24, sbm_flex - 24, spm - 24
         """
-        # TODO Separate communication action space??
         self.action_space = []
         self.total_qmix_action_space = []
 
@@ -47,6 +44,9 @@ class LocalFlexMarketEnv(gym.Env):
                 spot or flex status
         """
         self.observation_space = []
+        """since qmix uses DQN, the action space is (1,) for all agents, thus a total action space of (72,)
+            is divided as ((1,),(1,),...) for the total number of agents.
+            eg., 5 agents -> total_qmix_observation_space: ((1,),(1,),...360 times) """
         self.total_qmix_observation_space = []
         
         for agent in self.agents:
@@ -69,14 +69,13 @@ class LocalFlexMarketEnv(gym.Env):
                 agent_observation_space = spaces.Box(low=-np.inf, high=+np.inf,
                                                      shape=(3 * self.SpotMarket.dailySpotTime + 1,), dtype=np.float32)
             total_action_space.append(agent_action_space)
-            # TODO if there is extra communication space, append it to total_action_space
             if len(total_action_space) > 1:
                 self.action_space.append(spaces.Tuple(total_action_space))
             else:
                 self.action_space.append(total_action_space[0])
             self.observation_space.append(agent_observation_space)
 
-        """Convert to tuple for testing tf agents"""
+        """Convert to tuple for compatibility with tf-agents"""
         self.action_space = spaces.Tuple(self.action_space)
         self.total_qmix_action_space = spaces.Tuple(self.total_qmix_action_space)
         self.observation_space = spaces.Tuple(self.observation_space)
@@ -109,7 +108,6 @@ class LocalFlexMarketEnv(gym.Env):
         if done[0]:
             self.reset()
 
-        """for testing tf agents"""
         return tuple(obs), tuple(reward), done, info
 
     def reset(self):
@@ -128,7 +126,6 @@ class LocalFlexMarketEnv(gym.Env):
         for agent in self.agents:
             obs.append(self._get_obs(agent))
 
-        """for testing tf agents"""
         return tuple(obs)
 
     # get info used for evaluation

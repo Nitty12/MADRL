@@ -116,7 +116,7 @@ def restart(observation, batch_size=None):
     else:
       """Nitty: changing reward spec"""
       return TimeStep(
-          StepType.FIRST,
+          np.tile(StepType.FIRST, len(observation)),
           np.zeros(len(observation), dtype=np.float32),
           _as_float32_array(1.0),
           observation,
@@ -371,8 +371,12 @@ def get_individual_qmix_time_step_spec(time_step_spec):
 def get_individual_qmix_time_step(time_step, index, time):
   indices = tf.convert_to_tensor(list(range(0,48))+[48+time]+[71])
   observation = tf.gather(time_step.observation[index//3], indices=indices, axis=-1)
+  if len(time_step.step_type.shape)>1:
+    step_type = time_step.step_type[:, index//3]
+  else:
+    step_type = time_step.step_type
   return TimeStep(
-    step_type=time_step.step_type,
+    step_type=step_type,
     reward=time_step.reward[:, index//3],
     discount=time_step.discount,
     observation=observation)

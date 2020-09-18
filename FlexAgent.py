@@ -191,16 +191,24 @@ class FlexAgent:
         if alg =='QMIX':
             stepSize = 20
             dataType = int
+            """since Q net only supports actions from (0 - n), need to map the negative actions later"""
+            minSpotBidArray = np.full(self.dailySpotTime, 0, dtype=dataType)
+            maxSpotBidArray = np.full(self.dailySpotTime, stepSize * (self.highSpotBidLimit - self.lowSpotBidLimit),
+                                      dtype=dataType)
+            minFlexBidArray = np.full(self.dailySpotTime, 0, dtype=dataType)
+            maxFlexBidArray = np.full(self.dailySpotTime, stepSize * (self.highFlexBidLimit - self.lowFlexBidLimit),
+                                      dtype=dataType)
+            minPriceArray = np.full(self.dailySpotTime, 0, dtype=dataType)
+            maxPriceArray = np.full(self.dailySpotTime, stepSize * (self.highPriceLimit - self.lowPriceLimit),
+                                    dtype=dataType)
         else:
-            stepSize = 1
             dataType = float
-        minSpotBidArray = np.full(self.dailySpotTime, stepSize*self.lowSpotBidLimit, dtype=dataType)
-        maxSpotBidArray = np.full(self.dailySpotTime, stepSize*self.highSpotBidLimit, dtype=dataType)
-        minFlexBidArray = np.full(self.dailySpotTime, stepSize*self.lowFlexBidLimit, dtype=dataType)
-        maxFlexBidArray = np.full(self.dailySpotTime, stepSize*self.highFlexBidLimit, dtype=dataType)
-
-        minPriceArray = np.full(self.dailySpotTime, stepSize*self.lowPriceLimit, dtype=dataType)
-        maxPriceArray = np.full(self.dailySpotTime, stepSize*self.highPriceLimit, dtype=dataType)
+            minSpotBidArray = np.full(self.dailySpotTime, self.lowSpotBidLimit, dtype=dataType)
+            maxSpotBidArray = np.full(self.dailySpotTime, self.highSpotBidLimit, dtype=dataType)
+            minFlexBidArray = np.full(self.dailySpotTime, self.lowFlexBidLimit, dtype=dataType)
+            maxFlexBidArray = np.full(self.dailySpotTime, self.highFlexBidLimit, dtype=dataType)
+            minPriceArray = np.full(self.dailySpotTime, self.lowPriceLimit, dtype=dataType)
+            maxPriceArray = np.full(self.dailySpotTime, self.highPriceLimit, dtype=dataType)
 
         return np.hstack((minSpotBidArray, minFlexBidArray, minPriceArray)), \
                np.hstack((maxSpotBidArray, maxFlexBidArray, maxPriceArray))
