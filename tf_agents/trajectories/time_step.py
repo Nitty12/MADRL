@@ -380,3 +380,16 @@ def get_individual_qmix_time_step(time_step, index, time):
     reward=time_step.reward[:, index//3],
     discount=time_step.discount,
     observation=observation)
+
+def get_individual_iql_time_step(time_step, index, time):
+  indices = tf.convert_to_tensor(list(range(0,48))+[48+time]+[71])
+  observation = tf.gather(time_step.observation[index], indices=indices, axis=-1)
+  if len(time_step.step_type.shape)>1:
+    step_type = time_step.step_type[:, index]
+  else:
+    step_type = time_step.step_type
+  return TimeStep(
+    step_type=step_type,
+    reward=time_step.reward[:, index],
+    discount=time_step.discount,
+    observation=observation)

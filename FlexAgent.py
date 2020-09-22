@@ -54,7 +54,7 @@ class FlexAgent:
         self.highFlexBidLimit = 0
         self.lowPriceLimit = 1
         self.highPriceLimit = 2
-        self.penaltyViolation = -1000
+        self.penaltyViolation = -100
         self.spotState = None
         """current day MCP"""
         self.MCP = []
@@ -188,7 +188,7 @@ class FlexAgent:
         # TODO will the same space work for both states?
         """DSM, eV, PV and wind have different action space for flex bid
             eg, PV flex bid will be positive to decrease the spot dispatched (-ve) amounts"""
-        if alg =='QMIX':
+        if alg =='QMIX' or alg == 'IQL':
             stepSize = 20
             dataType = int
             """since Q net only supports actions from (0 - n), need to map the negative actions later"""

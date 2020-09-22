@@ -494,7 +494,7 @@ def from_transition(time_step, action_step, next_time_step, alg = None, joint_ac
       transition.
   """
   if joint_action:
-      if alg=='QMIX':
+      if alg=='QMIX' or alg == 'IQL':
           return Trajectory(
               step_type=time_step.step_type,
               observation=time_step.observation,

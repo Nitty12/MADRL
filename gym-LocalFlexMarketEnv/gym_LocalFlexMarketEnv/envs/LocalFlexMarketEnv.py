@@ -52,7 +52,7 @@ class LocalFlexMarketEnv(gym.Env):
         for agent in self.agents:
             total_action_space = [] 
             minLimit, maxLimit = agent.getActionLimits(self.alg)
-            if self.alg == 'QMIX':
+            if self.alg == 'QMIX' or self.alg == 'IQL':
                 agent_action_space = spaces.Box(low=minLimit, high=maxLimit, dtype=int)
                 agent_individual_action_space = []
                 for i in range(len(minLimit)):

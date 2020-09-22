@@ -20,6 +20,7 @@ from tf_agents.utils import training as training_lib
 from tf_agents.trajectories import trajectory
 from tf_agents.trajectories import time_step as ts
 import copy
+import re
 
 
 class MADDPGAgent:
@@ -100,7 +101,7 @@ class MADDPGAgent:
                                                              train_env.action_spec())
 
 
-class QMIXAgent:
+class QAgent:
     def __init__(self, type):
         self.fc_layer_params = (100,)
         self.dropout_layer_params = None
@@ -134,7 +135,9 @@ class QMIXAgent:
             q_network=self.QNetwork,
             optimizer=self.optimizer,
             td_errors_loss_fn=common.element_wise_squared_loss,
-            train_step_counter=train_step_counter)
+            train_step_counter=train_step_counter,
+            target_update_tau=0.01,
+            target_update_period=10)
         self.agent.initialize()
         self.eval_policy = self.agent.policy
         self.collect_policy = self.agent.collect_policy
@@ -266,7 +269,7 @@ class QMIXMixingNetwork(network.Network):
 
 
 class QMIX():
-    def __init__(self, nAgents, time_step_spec, train_step_counter,
+    def __init__(self, nAgents, time_step_spec, train_step_counter, summary_writer=None,
                  debug_summaries=False, summarize_grads_and_vars=False, enable_summaries=True):
         self.hyper_hidden_dim = 256
         self.qmix_hidden_dim = 64
@@ -279,14 +282,15 @@ class QMIX():
         self._gamma = 0.99
         self._update_target = self._get_target_updater(tau=0.01, period=10)
         self.train_step_counter = train_step_counter
+        self.summary_writer = summary_writer
         self.debug_summaries = debug_summaries
         self.summarize_grads_and_vars = summarize_grads_and_vars
         self.enable_summaries = enable_summaries
 
     def hyperParameterInit(self, parameterDict):
-        self.hyper_hidden_dim = parameterDict['hyper_hidden_dim']
-        self.qmix_hidden_dim = parameterDict['qmix_hidden_dim']
-        self.learning_rate = parameterDict['qmix_learning_rate']
+        # self.hyper_hidden_dim = parameterDict['hyper_hidden_dim']
+        # self.qmix_hidden_dim = parameterDict['qmix_hidden_dim']
+        # self.learning_rate = parameterDict['qmix_learning_rate']
         fc_layer_params = {}
         dropout_layer_params = {}
         activation_fn = {}
@@ -325,17 +329,22 @@ class QMIX():
 
             return common.Periodically(update, period, 'periodic_update_targets')
 
-    def train(self, time_steps, policy_steps, next_time_steps, target_values, main_values):
+    def train(self, experience, agents, nameDict, networkDict):
+        """QMIX - get the Q values from the target network and main network of all the agents"""
+        time_steps, policy_steps, next_time_steps = (
+            trajectory.experience_to_transitions(experience, squeeze_time_dim=True))
+
         with tf.GradientTape() as tape:
             loss_info = self._loss(
                 time_steps, policy_steps, next_time_steps,
-                target_values, main_values,
+                agents, nameDict, networkDict,
                 td_errors_loss_fn=self._td_errors_loss_fn,
                 gamma=self._gamma,
                 training=True)
         tf.debugging.check_numerics(loss_info.loss, 'Loss is inf or nan')
-        variables_to_train = self.QMIXNet.trainable_weights
-        non_trainable_weights = self.QMIXNet.non_trainable_weights
+        variables_to_train = getTrainableVariables(networkDict)
+        variables_to_train.append(self.QMIXNet.trainable_weights)
+        variables_to_train = tf.nest.flatten(variables_to_train)
         assert list(variables_to_train), "No variables in the agent's QMIX network."
         grads = tape.gradient(loss_info.loss, variables_to_train)
         grads_and_vars = list(zip(grads, variables_to_train))
@@ -345,15 +354,42 @@ class QMIX():
         return loss_info
 
     def _loss(self, time_steps, policy_steps, next_time_steps,
-              target_values, main_values,
+              agents, nameDict, networkDict,
               td_errors_loss_fn,
               gamma=1.0,
               weights=None,
               training=False):
         with tf.name_scope('loss'):
-            q_total, _ = self.QMIXNet(main_values, time_steps.observation, training=training)
+            total_agents_target = []
+            total_agents_main = []
+            for i, flexAgent in enumerate(agents):
+                for node in nameDict:
+                    target = None
+                    for type, names in nameDict[node].items():
+                        if flexAgent.id in names:
+                            target = []
+                            main = []
+                            for net in networkDict[node][type]:
+                                action_index = -1
+                                for t in range(24):
+                                    action_index += 1
+                                    actions = tf.gather(policy_steps.action[i], indices=action_index, axis=-1)
+                                    individual_target = net._compute_next_q_values(next_time_steps, index=i, time=t)
+                                    individual_main = net._compute_q_values(time_steps, actions,
+                                                                            index=i, time=t, training=True)
+                                    target.append(tf.reshape(individual_target, [-1, 1]))
+                                    main.append(tf.reshape(individual_main, [-1, 1]))
+                            break
+                    if target is not None:
+                        break
+                total_agents_target.append(tf.concat(target, -1))
+                total_agents_main.append(tf.concat(main, -1))
+            total_agents_target = tf.concat(total_agents_target, -1)
+            total_agents_main = tf.concat(total_agents_main, -1)
+
+            q_total, _ = self.QMIXNet(total_agents_main, time_steps.observation, training=training)
             q_total = tf.squeeze(q_total)
-            target_q_total, _ = self.TargetQMIXNet(target_values, next_time_steps.observation, training=training)
+            target_q_total, _ = self.TargetQMIXNet(total_agents_target, next_time_steps.observation, training=False)
             target_q_total = tf.squeeze(target_q_total)
             """using the mean reward for all the agents"""
             mean_reward = tf.reduce_mean(next_time_steps.reward, axis=1)
@@ -361,8 +397,9 @@ class QMIX():
 
             valid_mask = tf.cast(~time_steps.is_last(), tf.float32)
             td_error = valid_mask * (td_targets - q_total)
-
-            td_loss = valid_mask * td_errors_loss_fn(td_targets, q_total)
+            td_loss = valid_mask * tf.compat.v1.losses.absolute_difference(td_targets, q_total,
+                                                                        reduction=tf.compat.v1.losses.Reduction.NONE)
+            # td_loss = valid_mask * td_errors_loss_fn(td_targets, q_total)
 
             if nest_utils.is_batched_nested_tensors(
                     time_steps, self.time_step_spec, num_outer_dims=2):
@@ -374,6 +411,10 @@ class QMIX():
                 per_example_loss=td_loss,
                 sample_weight=weights)
             total_loss = agg_loss.total_loss
+
+            if self.summary_writer is not None:
+                with self.summary_writer.as_default():
+                    tf.summary.scalar('loss', total_loss, step=self.train_step_counter)
 
             losses_dict = {'td_loss': agg_loss.weighted,
                            'reg_loss': agg_loss.regularization,
@@ -400,6 +441,151 @@ class QMIX():
                 common.generate_tensor_summaries('q_total', q_total,
                                                  self.train_step_counter)
                 common.generate_tensor_summaries('target_q_total', target_q_total,
+                                                 self.train_step_counter)
+                common.generate_tensor_summaries('diff_q_values', diff_q_values,
+                                                 self.train_step_counter)
+
+            return tf_agent.LossInfo(total_loss, DqnLossInfo(td_loss=td_loss,
+                                                             td_error=td_error))
+
+def getTrainableVariables(networkDict):
+    # get the weights for the individual Q networks of all agents for QMIX
+    networkList = []
+    variables_to_train = []
+    for node in networkDict:
+        for net in networkDict[node].values():
+            if isinstance(net, list):
+                networkList.extend(net)
+            else:
+                networkList.append(net)
+    for net in networkList:
+        variables_to_train.append(net.agent._q_network.trainable_weights)
+    # variables_to_train=networkList[0].agent._q_network.trainable_weights
+    return variables_to_train
+
+class IQL():
+    def __init__(self, networkDict, nameDict, nameList, time_step_spec, train_step_counter, summary_writer=None,
+                 debug_summaries=False, summarize_grads_and_vars=False, enable_summaries=True):
+        self.learning_rate = 0.001
+        self.networkDict = networkDict
+        self.nameDict = nameDict
+        self.nameList = nameList
+        self.time_step_spec = time_step_spec
+        self._epsilon_greedy = 0.1
+        self._n_step_update = 1
+        self._td_errors_loss_fn = common.element_wise_squared_loss
+        self._gamma = 0.99
+        self.train_step_counter = train_step_counter
+        self.summary_writer = summary_writer
+        self.debug_summaries = debug_summaries
+        self.summarize_grads_and_vars = summarize_grads_and_vars
+        self.enable_summaries = enable_summaries
+
+    def train(self, experience, agents, nameDict, networkDict):
+        time_steps, policy_steps, next_time_steps = (
+            trajectory.experience_to_transitions(experience, squeeze_time_dim=True))
+        loss_list = []
+        for i, flexAgent in enumerate(agents):
+            for node in nameDict:
+                for type, names in nameDict[node].items():
+                    if flexAgent.id in names:
+                        for net in networkDict[node][type]:
+                            action_index = -1
+                            for t in range(24):
+                                action_index += 1
+                                actions = tf.gather(policy_steps.action[i], indices=action_index, axis=-1)
+                                individual_iql_time_step = ts.get_individual_iql_time_step(time_steps, index=i, time=t)
+                                individual_iql_next_time_step = ts.get_individual_iql_time_step(next_time_steps, index=i, time=t)
+                                train_loss = self.train_single_net(net, individual_iql_time_step,
+                                                                   individual_iql_next_time_step,
+                                                                   time_steps, actions, next_time_steps, i, t).loss
+                                loss_list.append(train_loss)
+                    break
+        self.train_step_counter.assign_add(1)
+        if self.summary_writer is not None:
+            with self.summary_writer.as_default():
+                avg_loss = sum(loss_list)/len(loss_list)
+                tf.summary.scalar('loss', avg_loss, step=self.train_step_counter)
+        return avg_loss
+
+    def train_single_net(self, net, individual_iql_time_step, individual_iql_next_time_step,
+                         time_steps, actions, next_time_steps, i, t):
+        with tf.GradientTape() as tape:
+            loss_info = self._loss(net,
+                                   individual_iql_time_step, individual_iql_next_time_step,
+                                   time_steps, actions, next_time_steps, i, t,
+                                   td_errors_loss_fn=net.agent._td_errors_loss_fn,
+                                   gamma=net.agent._gamma,
+                                   training=True)
+        tf.debugging.check_numerics(loss_info.loss, 'Loss is inf or nan')
+        variables_to_train = net.agent._q_network.trainable_weights
+        non_trainable_weights = net.agent._q_network.non_trainable_weights
+        assert list(variables_to_train), "No variables in the agent's QMIX network."
+        grads = tape.gradient(loss_info.loss, variables_to_train)
+        grads_and_vars = list(zip(grads, variables_to_train))
+        training_lib.apply_gradients(
+            net.agent._optimizer, grads_and_vars, global_step=net.agent.train_step_counter)
+        net.agent._update_target()
+        return loss_info
+
+    def _loss(self, net, individual_iql_time_step, individual_iql_next_time_step,
+              time_steps, actions, next_time_steps, i, t,
+              td_errors_loss_fn,
+              gamma=1.0,
+              weights=None,
+              training=False):
+        with tf.name_scope('loss'):
+
+            individual_target = tf.reshape(net._compute_next_q_values(next_time_steps, index=i, time=t), [-1,1])
+            individual_main = tf.reshape(net._compute_q_values(time_steps, actions,
+                                                    index=i, time=t, training=True), [-1,1])
+
+            reward = tf.reshape(individual_iql_next_time_step.reward, [-1,1])
+            discount = tf.reshape(individual_iql_next_time_step.discount, [-1, 1])
+            td_targets = tf.stop_gradient(reward + gamma * discount * individual_target)
+
+            valid_mask = tf.reshape(tf.cast(~individual_iql_time_step.is_last(), tf.float32), [-1,1])
+            td_error = valid_mask * (td_targets - individual_main)
+            td_loss = valid_mask * tf.compat.v1.losses.absolute_difference(td_targets, individual_main,
+                                                                        reduction=tf.compat.v1.losses.Reduction.NONE)
+            # td_loss = valid_mask * td_errors_loss_fn(td_targets, q_total)
+
+            if nest_utils.is_batched_nested_tensors(
+                    individual_iql_time_step, net.agent.time_step_spec, num_outer_dims=2):
+                # Do a sum over the time dimension.
+                td_loss = tf.reduce_sum(input_tensor=td_loss, axis=1)
+
+            # Aggregate across the elements of the batch and add regularization loss.
+            agg_loss = common.aggregate_losses(
+                per_example_loss=td_loss,
+                sample_weight=weights)
+            total_loss = agg_loss.total_loss
+
+            losses_dict = {'td_loss': agg_loss.weighted,
+                           'reg_loss': agg_loss.regularization,
+                           'total_loss': total_loss}
+
+            common.summarize_scalar_dict(losses_dict,
+                                         step=self.train_step_counter,
+                                         name_scope='Losses/')
+
+            if self.summarize_grads_and_vars:
+                with tf.name_scope('Variables/'):
+                    for var in net.agent.trainable_weights:
+                        tf.compat.v2.summary.histogram(
+                            name=var.name.replace(':', '_'),
+                            data=var,
+                            step=self.train_step_counter)
+
+            if self.debug_summaries:
+                diff_q_values = individual_main - individual_target
+                common.generate_tensor_summaries('td_error', td_error,
+                                                 self.train_step_counter)
+                common.generate_tensor_summaries('td_loss', td_loss,
+                                                 self.train_step_counter)
+                common.generate_tensor_summaries('q_total', individual_main,
+                                                 self.train_step_counter)
+                common.generate_tensor_summaries('target_q_total', individual_target,
                                                  self.train_step_counter)
                 common.generate_tensor_summaries('diff_q_values', diff_q_values,
                                                  self.train_step_counter)

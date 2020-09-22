@@ -1,10 +1,4 @@
-from EVehicle import EVehicle
-from PVGen import PVG
-from WindGen import WG
-from HeatPump import HeatPump
-from BatteryStorage import BatStorage
-from DSM import DSM
-from AgentNeuralNet import MADDPGAgent, QMIX
+from AgentNeuralNet import MADDPGAgent, QMIX, IQL
 from SpotMarket import SpotMarket
 from DSO import DSO
 from Grid import Grid
@@ -35,6 +29,7 @@ import optuna
 import dask
 import joblib
 import dill
+import datetime
 pd.options.mode.chained_assignment = None
 
 
@@ -42,8 +37,9 @@ if __name__ == '__main__':
     st = time.time()
     np.random.seed(0)
     tf.random.set_seed(0)
-    """specify the algorithm - MADDPG, QMIX"""
-    alg = 'QMIX'
+
+    """specify the algorithm - MADDPG, QMIX, IQL"""
+    alg = 'MADDPG'
 
     agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, \
     genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit(alg)
@@ -73,8 +69,6 @@ if __name__ == '__main__':
     batch_size = 8
 
     replay_buffer = util.replayBufferInit(train_env)
-    dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
-    iterator = iter(dataset)
     time_step = train_env.reset()
 
     """to append and save for analysis"""
@@ -85,19 +79,37 @@ if __name__ == '__main__':
 
     def objective(trial):
         parameterDict = util.hyperParameterOpt(trial, alg)
+        batch_size = parameterDict['batch_size'][0]
+        dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
+        iterator = iter(dataset)
+
         time_step = train_env.reset()
-        train_step_counter = tf.Variable(0, trainable=False)
+        train_step_counter = tf.Variable(0, trainable=False, dtype=tf.int64)
+
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        train_log_dir = '../results/logs/' + alg + '_' + current_time
+        train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+
         if alg == 'QMIX':
             nActions = train_env.action_spec()[0].shape[0]
             qmix = QMIX(nAgents=len(agents) * nActions, time_step_spec=train_env.time_step_spec(),
-                        train_step_counter=train_step_counter)
+                        train_step_counter=train_step_counter,summary_writer=train_summary_writer)
             qmix.hyperParameterInit(parameterDict)
+        if alg == 'IQL':
+            iql = IQL(networkDict=networkDict, nameDict=nameDict, nameList=nameList,
+                      time_step_spec=train_env.time_step_spec(),
+                      train_step_counter=train_step_counter,summary_writer=train_summary_writer)
+
         """initialize the RL agents"""
         util.RLAgentInit(train_env, networkDict, nameDict, nameList, parameterDict, train_step_counter)
         """get the collection and evaluation policies"""
         collect_policySteps, eval_policySteps = util.getPolicies(networkDict, nameDict, nameList, alg)
         """initialize trainers for all network"""
         util.initializeTrainer(networkDict)
+
+        # """create checkpoint to resume training at a later stage"""
+        # checkpointDict = util.checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_counter, alg)
+        # util.restoreCheckpoint(nameList, nameDict, networkDict, checkpointDict)
 
         for num_iter in tqdm.trange(1, num_iterations + 1):
             """Collect a few steps using collect_policy and save to the replay buffer."""
@@ -110,41 +122,31 @@ if __name__ == '__main__':
 
             """training without multiprocessing"""
             if alg == 'MADDPG':
-                time_steps, policy_steps, next_time_steps, total_agents_target, total_agents_main = \
-                    util.get_target_and_main_actions(experience, agents, nameDict, networkDict)
-                for i, agentName in enumerate(nameList):
-                    agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
-                    train_loss = 0
-                    for type, names in nameDict[agentNode].items():
-                        if agentName in names:
-                            train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
-                                                                                  total_agents_target,
-                                                                                  total_agents_main,
-                                                                                  index=i).loss
-                            break
-                    step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
+                train_loss = util.trainMADDPGAgents(experience, agents, nameDict, networkDict,
+                                                    nameList, typeList, train_summary_writer)
             elif alg == 'QMIX':
-                time_steps, policy_steps, next_time_steps, total_agents_target, total_agents_main = \
-                    util.get_target_and_main_values(experience, agents, nameDict, networkDict)
-                train_loss = qmix.train(time_steps, policy_steps, next_time_steps, total_agents_target,
-                                                                                  total_agents_main).loss
+                train_loss = qmix.train(experience, agents, nameDict, networkDict).loss
+            elif alg == 'IQL':
+                train_loss = iql.train(experience, agents, nameDict, networkDict)
+            print('Iteration: {} Loss: {}'.format(num_iter, train_loss))
 
             """unpromising trials at the early stages of the training"""
-            intermediate_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=2)
-            trial.report(intermediate_return.sum(), num_iter)
+            intermediate_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=4)
+            trial.report(np.average(intermediate_return), num_iter)
             if trial.should_prune():
                 raise optuna.TrialPruned()
 
             if num_iter % eval_interval == 0:
-                avg_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=2)
+                avg_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=4)
                 print('step: {0}, Avg Return: {1}'.format(num_iter, avg_return))
                 print("=====================================================================================")
-                joblib.dump(study, '../results/study.pkl')
+                study_path = '../results/study'+alg+'.pkl'
+                joblib.dump(study, study_path)
                 return avg_return.sum()
 
     study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner(n_startup_trials=5,
                                                                n_warmup_steps=20))
-    study.optimize(objective, n_trials=10)
+    study.optimize(objective, n_trials=100)
 
     duration = (time.time()-st)/60
     print("---------------------------------------------%.2f minutes-----------------------------------" % duration)

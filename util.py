@@ -4,7 +4,7 @@ from WindGen import WG
 from HeatPump import HeatPump
 from BatteryStorage import BatStorage
 from DSM import DSM
-from AgentNeuralNet import MADDPGAgent, QMIXAgent
+from AgentNeuralNet import MADDPGAgent, QAgent
 from SpotMarket import SpotMarket
 from DSO import DSO
 from Grid import Grid
@@ -59,7 +59,7 @@ def agentsInit(alg):
 
     agentsDict = {}
     """the number of agents in each type to consider as flexibility"""
-    numAgents = 5
+    numAgents = 20
     """negate the PV and Wind timeseries to make generation qty -ve"""
     for name in genSeriesPV.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
@@ -120,10 +120,10 @@ def RLNetworkInit(agentsDict, alg):
         if networkDict[agent.node].get(agent.type) is None:
             if alg=='MADDPG':
                 networkDict[agent.node][agent.type] = MADDPGAgent()
-            elif alg=='QMIX':
-                networkDict[agent.node][agent.type] = [QMIXAgent(type='sbm_spot'),
-                                                       QMIXAgent(type='sbm_flex'),
-                                                       QMIXAgent(type='spm_flex')]
+            elif alg=='QMIX' or alg=='IQL':
+                networkDict[agent.node][agent.type] = [QAgent(type='sbm_spot'),
+                                                       QAgent(type='sbm_flex'),
+                                                       QAgent(type='spm_flex')]
     return nameDict, networkDict
 
 
@@ -273,7 +273,7 @@ def one_step(environment, policySteps, alg):
     """iteration alternate between spot and flex states"""
     total_agents_action = []
     time_step = environment.current_time_step()
-    if alg == 'QMIX':
+    if alg == 'QMIX' or alg =='IQL':
         """return the normal integer actions to save in replay buffer"""
         total_agents_integer_action = []
         individual_agent_integer_action = []
@@ -389,24 +389,38 @@ def get_target_and_main_values(experience, agents, nameDict, networkDict):
     total_agents_main = tf.concat(total_agents_main, -1)
     return time_steps, policy_steps, next_time_steps, total_agents_target, total_agents_main
 
-def checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_counter):
+def checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_counter, alg):
     """to save and restore the trained RL agents"""
     path = os.getcwd()
+    relativePath = '../results/checkpoint_' + alg
+    if not os.path.exists(os.path.join(path, relativePath)):
+        os.makedirs(os.path.join(path, relativePath))
     checkpointDict = {}
     for i, agentName in enumerate(nameList):
         agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
         for type, names in nameDict[agentNode].items():
             if agentName in names:
-                relativePath = '../results/checkpointAgent_' + agentName
-                checkpointDict[agentName] = common.Checkpointer(
-                    ckpt_dir=os.path.join(path, relativePath),
-                    max_to_keep=1,
-                    agent=networkDict[agentNode][type].agent,
-                    policy=networkDict[agentNode][type].agent.policy,
-                    global_step=train_step_counter
-                )
+                if isinstance(networkDict[agentNode][type], list):
+                    for i, net in enumerate(networkDict[agentNode][type], 1):
+                        relativePath = '../results/checkpoint_' + alg + '/' + agentName + str(i)
+                        checkpointDict[agentName + '_' + str(i)] = common.Checkpointer(
+                            ckpt_dir=os.path.join(path, relativePath),
+                            max_to_keep=1,
+                            agent=net.agent,
+                            policy=net.agent.policy,
+                            global_step=train_step_counter
+                        )
+                else:
+                    relativePath = '../results/checkpoint_' + alg + '/' + agentName
+                    checkpointDict[agentName] = common.Checkpointer(
+                        ckpt_dir=os.path.join(path, relativePath),
+                        max_to_keep=1,
+                        agent=networkDict[agentNode][type].agent,
+                        policy=networkDict[agentNode][type].agent.policy,
+                        global_step=train_step_counter
+                    )
                 break
-    relativePath = '../results/checkpointReplayBuffer'
+    relativePath = '../results/checkpoint_' + alg + '/ReplayBuffer'
     checkpointDict['ReplayBuffer'] = common.Checkpointer(
         ckpt_dir=os.path.join(path, relativePath),
         max_to_keep=1,
@@ -415,13 +429,17 @@ def checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_co
     return checkpointDict
 
 
-def restoreCheckpoint(nameList, nameDict, checkpointDict):
+def restoreCheckpoint(nameList, nameDict, networkDict, checkpointDict):
     checkpointDict['ReplayBuffer'].initialize_or_restore()
     for i, agentName in enumerate(nameList):
         agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
         for type, names in nameDict[agentNode].items():
             if agentName in names:
-                checkpointDict[agentName].initialize_or_restore()
+                if isinstance(networkDict[agentNode][type], list):
+                    for i, net in enumerate(networkDict[agentNode][type], 1):
+                        checkpointDict[agentName + '_' + str(i)].initialize_or_restore()
+                else:
+                    checkpointDict[agentName].initialize_or_restore()
                 break
     train_step_counter = tf.compat.v1.train.get_global_step()
 
@@ -453,6 +471,7 @@ def trainLoop(agentIndexAndName, nameDict, networkDict, time_steps, policy_steps
 def hyperParameterOpt(trial, alg):
     """hyperparameter optimization with optuna"""
     parameterDict = {}
+    parameterDict['batch_size']= trial.suggest_categorical('batch_size', [8, 16, 32, 64, 128]),
     if alg == 'MADDPG':
         parameterDict['learning_rate'] = trial.suggest_float("adam_learning_rate", 1e-5, 1e-1)
         parameterDict['discount_factor'] = trial.suggest_float('discount_factor', 0.95, 0.999)
@@ -489,7 +508,7 @@ def hyperParameterOpt(trial, alg):
             parameterDict['fc_layer_params_critic_merged'].append(num_hidden)
             parameterDict['fc_dropout_layer_params_critic_merged'].append(dropout_rate)
 
-    elif alg == 'QMIX':
+    elif alg == 'QMIX' or alg == 'IQL':
         parameterDict['learning_rate'] = trial.suggest_float("adam_learning_rate", 1e-5, 1e-1)
         parameterDict['fc_layer_params'] = []
         parameterDict['fc_dropout_layer_params'] = []
@@ -499,10 +518,10 @@ def hyperParameterOpt(trial, alg):
             dropout_rate = trial.suggest_float("dropout_rate_L{}".format(i+1), 0, 0.5)
             parameterDict['fc_layer_params'].append(num_hidden)
             parameterDict['fc_dropout_layer_params'].append(dropout_rate)
-
-        parameterDict['hyper_hidden_dim'] = trial.suggest_int('hyper_hidden_dim', 100, 750)
-        parameterDict['qmix_hidden_dim'] = trial.suggest_int('qmix_hidden_dim', 100, 750)
-        parameterDict['qmix_learning_rate'] = trial.suggest_float("qmix_adam_learning_rate", 1e-5, 1e-1)
+        if alg == 'QMIX':
+            parameterDict['hyper_hidden_dim'] = trial.suggest_int('hyper_hidden_dim', 10, 300)
+            parameterDict['qmix_hidden_dim'] = trial.suggest_int('qmix_hidden_dim', 1, 35)
+            parameterDict['qmix_learning_rate'] = trial.suggest_float("qmix_adam_learning_rate", 1e-5, 1e-1)
 
     return parameterDict
 
@@ -532,7 +551,7 @@ def getPolicies(networkDict, nameDict, nameList, alg):
                     collect_policySteps.append(networkDict[agentNode][type].collect_policy.action)
                     eval_policySteps.append(networkDict[agentNode][type].eval_policy.action)
                     break
-                elif alg == 'QMIX':
+                elif alg == 'QMIX' or alg == 'IQL':
                     collect_policySteps.extend([QAgent.collect_policy.action for QAgent in networkDict[agentNode][type]])
                     eval_policySteps.extend([QAgent.eval_policy.action for QAgent in networkDict[agentNode][type]])
                     break
@@ -553,3 +572,25 @@ def initializeTrainer(networkDict):
         net.agent.train = common.function(net.agent.train)
         # Reset the train step
         net.agent.train_step_counter.assign(0)
+
+def trainMADDPGAgents(experience, agents, nameDict, networkDict, nameList, typeList, train_summary_writer=None):
+    time_steps, policy_steps, next_time_steps, total_agents_target, total_agents_main = \
+        get_target_and_main_actions(experience, agents, nameDict, networkDict)
+    loss_list = []
+    for i, agentName in enumerate(nameList):
+        agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+        train_loss = 0
+        for type, names in nameDict[agentNode].items():
+            if agentName in names:
+                train_loss = networkDict[agentNode][type].agent.train(time_steps, policy_steps, next_time_steps,
+                                                                      total_agents_target,
+                                                                      total_agents_main,
+                                                                      index=i).loss
+                loss_list.append(train_loss)
+                break
+        step = networkDict[agentNode][typeList[i]].agent.train_step_counter.numpy()
+    avg_loss = sum(loss_list)/len(loss_list)
+    if train_summary_writer is not None:
+        with train_summary_writer.as_default():
+            tf.summary.scalar('loss', avg_loss, step=step)
+    return avg_loss
