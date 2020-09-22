@@ -41,14 +41,19 @@ def agentsInit(alg):
         data['Un_kV'] = data['Un_kV'].apply(pd.to_numeric)
         data.to_pickle("../inputs/RA_RD_Import_.pkl")
 
+    print('Reading Heat Pump series...')
     loadingSeriesHP = getHPSeries()
+    print('Reading EV series...')
     chargingSeriesEV, capacitySeriesEV, absenceSeriesEV, consumptionSeriesEV = getEVSeries()
     relativePathCSV = "../inputs/PV_Zeitreihe_nnf_1h.csv"
     relativePathPickle = "../inputs/PV_Zeitreihe_nnf_1h.pkl"
+    print('Reading PV series...')
     genSeriesPV = getGenSeries(relativePathCSV, relativePathPickle)
     relativePathCSV = "../inputs/WEA_nnf_1h.csv"
     relativePathPickle = "../inputs/WEA_nnf_1h.pkl"
+    print('Reading Wind series...')
     genSeriesWind = getGenSeries(relativePathCSV, relativePathPickle)
+    print('Reading DSM series...')
     loadingSeriesDSM = getDSMSeries()
 
     """contains names of the respective agents"""
@@ -59,7 +64,7 @@ def agentsInit(alg):
 
     agentsDict = {}
     """the number of agents in each type to consider as flexibility"""
-    numAgents = 20
+    numAgents = 10
     """negate the PV and Wind timeseries to make generation qty -ve"""
     for name in genSeriesPV.columns[:numAgents]:
         name = re.search('k.*', name).group(0)
@@ -240,7 +245,7 @@ def getGenSeries(relativePathCSV, relativePathPickle):
         genSeries.columns = columnNames
         """converting to negative value for generation"""
         genSeries = -genSeries
-        genSeries.to_pickle("../inputs/ang_Kunden_GHD_nnf_1h.pkl")
+        genSeries.to_pickle(relativePathPickle)
     return genSeries
 
 

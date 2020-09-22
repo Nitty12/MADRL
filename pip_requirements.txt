@@ -74,7 +74,7 @@ stevedore==3.2.0
 tensorboard==2.2.1
 tensorboard-plugin-wit==1.6.0.post3
 tensorflow==2.1.0
-tensorflow-estimator==2.2.0
+tensorflow-estimator==2.1.0
 tensorflow-probability==0.9.0
 termcolor==1.1.0
 tf-agents==0.5.0

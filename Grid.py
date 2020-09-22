@@ -137,6 +137,7 @@ class Grid:
             columnNamesHH = columnNamesHH1 + columnNamesHH2
             # TODO delete efficiently may be use multiprocess pool etc
             del loadingSeriesHH2
+            loadingSeriesHH.to_pickle("../inputs/loadingSeriesHH.pkl")
 
         columnNames = columnNamesHH + \
                       list(self.loadingSeriesHP.columns[self.numAgents:]) + \
@@ -177,7 +178,7 @@ class Grid:
                     file.endswith('Sensitivities_Init_.csv')]
 
         if os.path.isfile("../inputs/SensiDFNew.pkl"):
-            print("Reading pickled sensitivity dataframe")
+            print("Reading sensitivity dataframe...")
             self.sensitivity = pd.read_pickle("../inputs/SensiDFNew.pkl")
 
             """Read the first file to get required data useful for consequent processing"""
