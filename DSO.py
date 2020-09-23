@@ -3,6 +3,8 @@ from Grid import Grid
 import pandas as pd
 import numpy as np
 import re
+import util
+import time
 
 
 class DSO:
@@ -41,12 +43,12 @@ class DSO:
                 self.bids[time] = pd.DataFrame(data={'qty_bid': np.full(nBids, 0),
                                                      'price': np.full(nBids, 0),
                                                      'accepted': np.full(nBids, False)})
-                currentSensitivity = self.grid.getCurrentSensitivity(time)
+                currentSensitivity = self.grid.getSensitivity(time)
                 """congested lines/ nodes at this particular time"""
                 congested = self.grid.data.loc[self.grid.congestionStatus.loc[time, :].values, 'Name'].values
                 """"""
                 reqdFlexI_A = self.grid.data.loc[self.grid.data['Name'].isin(congested), 'I_rated_A'].values - \
-                              self.grid.loading.loc[time, congested].values
+                              np.abs(self.grid.loading.loc[time, congested].values)
                 impact = pd.DataFrame(np.full((nBids, len(congested)), 0), columns=congested)
                 for i, (agentID, flexbid) in enumerate(self.flexMarket.bids.items()):
                     agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentID).group(1)

@@ -5,9 +5,9 @@ from HeatPump import HeatPump
 from BatteryStorage import BatStorage
 from DSM import DSM
 from AgentNeuralNet import MADDPGAgent, QAgent
-from SpotMarket import SpotMarket
-from DSO import DSO
-from Grid import Grid
+# from SpotMarket import SpotMarket
+# from DSO import DSO
+# from Grid import Grid
 import gym
 import numpy as np
 import pandas as pd
@@ -254,7 +254,7 @@ def getAgentDetails(data, name):
     loc = details['Location'].values[0]
     voltage_level = details['Un_kV'].values[0]
     """no information on maximum and minimum power in the latest csv"""
-    min_power = 2
+    min_power = 0
     max_power = 2
     return loc, voltage_level, min_power, max_power
 
@@ -287,6 +287,7 @@ def one_step(environment, policySteps, alg):
         agent_index = 0
         action_type = 0
         for i, policyStep in enumerate(policySteps):
+            lastTime = time.time()
             action_type += 1
             if action_type == 1:
                 correction = environment.pyenv.envs[0].agents[agent_index].lowSpotBidLimit
@@ -335,7 +336,6 @@ def collect_step(environment, policySteps, buffer, alg):
     time_step, total_agents_action, next_time_step = one_step(environment, policySteps, alg)
     traj = trajectory.from_transition(time_step, total_agents_action, next_time_step, alg=alg, joint_action=True)
     buffer.add_batch(traj)
-    # tf_metrics.AverageReturnMetric(traj)
 
 def get_target_and_main_actions(experience, agents, nameDict, networkDict):
     """MADDPG - get the actions from the target actor network and main actor network of all the agents"""
@@ -476,7 +476,7 @@ def trainLoop(agentIndexAndName, nameDict, networkDict, time_steps, policy_steps
 def hyperParameterOpt(trial, alg):
     """hyperparameter optimization with optuna"""
     parameterDict = {}
-    parameterDict['batch_size']= trial.suggest_categorical('batch_size', [8, 16, 32, 64, 128]),
+    parameterDict['batch_size']= trial.suggest_categorical('batch_size', [2, 4, 8])
     if alg == 'MADDPG':
         parameterDict['learning_rate'] = trial.suggest_float("adam_learning_rate", 1e-5, 1e-1)
         parameterDict['discount_factor'] = trial.suggest_float('discount_factor', 0.95, 0.999)
@@ -599,3 +599,8 @@ def trainMADDPGAgents(experience, agents, nameDict, networkDict, nameList, typeL
         with train_summary_writer.as_default():
             tf.summary.scalar('loss', avg_loss, step=step)
     return avg_loss
+
+def checkTime(lastTime, process):
+    presentTime = time.time()
+    print(process, presentTime - lastTime)
+    return presentTime

@@ -333,8 +333,12 @@ class QMIX():
         """QMIX - get the Q values from the target network and main network of all the agents"""
         time_steps, policy_steps, next_time_steps = (
             trajectory.experience_to_transitions(experience, squeeze_time_dim=True))
-
-        with tf.GradientTape() as tape:
+        variables_to_train = getTrainableVariables(networkDict)
+        variables_to_train.append(self.QMIXNet.trainable_weights)
+        variables_to_train = tf.nest.flatten(variables_to_train)
+        assert list(variables_to_train), "No variables in the agent's QMIX network."
+        with tf.GradientTape(watch_accessed_variables=False) as tape:
+            tape.watch(variables_to_train)
             loss_info = self._loss(
                 time_steps, policy_steps, next_time_steps,
                 agents, nameDict, networkDict,
@@ -342,10 +346,6 @@ class QMIX():
                 gamma=self._gamma,
                 training=True)
         tf.debugging.check_numerics(loss_info.loss, 'Loss is inf or nan')
-        variables_to_train = getTrainableVariables(networkDict)
-        variables_to_train.append(self.QMIXNet.trainable_weights)
-        variables_to_train = tf.nest.flatten(variables_to_train)
-        assert list(variables_to_train), "No variables in the agent's QMIX network."
         grads = tape.gradient(loss_info.loss, variables_to_train)
         grads_and_vars = list(zip(grads, variables_to_train))
         training_lib.apply_gradients(
@@ -510,7 +510,10 @@ class IQL():
 
     def train_single_net(self, net, individual_iql_time_step, individual_iql_next_time_step,
                          time_steps, actions, next_time_steps, i, t):
-        with tf.GradientTape() as tape:
+        variables_to_train = net.agent._q_network.trainable_weights
+        assert list(variables_to_train), "No variables in the agent's QMIX network."
+        with tf.GradientTape(watch_accessed_variables=False) as tape:
+            tape.watch(variables_to_train)
             loss_info = self._loss(net,
                                    individual_iql_time_step, individual_iql_next_time_step,
                                    time_steps, actions, next_time_steps, i, t,
@@ -518,9 +521,6 @@ class IQL():
                                    gamma=net.agent._gamma,
                                    training=True)
         tf.debugging.check_numerics(loss_info.loss, 'Loss is inf or nan')
-        variables_to_train = net.agent._q_network.trainable_weights
-        non_trainable_weights = net.agent._q_network.non_trainable_weights
-        assert list(variables_to_train), "No variables in the agent's QMIX network."
         grads = tape.gradient(loss_info.loss, variables_to_train)
         grads_and_vars = list(zip(grads, variables_to_train))
         training_lib.apply_gradients(

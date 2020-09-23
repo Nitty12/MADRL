@@ -79,7 +79,7 @@ if __name__ == '__main__':
 
     def objective(trial):
         parameterDict = util.hyperParameterOpt(trial, alg)
-        batch_size = parameterDict['batch_size'][0]
+        batch_size = parameterDict['batch_size']
         dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
         iterator = iter(dataset)
 
@@ -99,14 +99,12 @@ if __name__ == '__main__':
             iql = IQL(networkDict=networkDict, nameDict=nameDict, nameList=nameList,
                       time_step_spec=train_env.time_step_spec(),
                       train_step_counter=train_step_counter,summary_writer=train_summary_writer)
-
         """initialize the RL agents"""
         util.RLAgentInit(train_env, networkDict, nameDict, nameList, parameterDict, train_step_counter)
         """get the collection and evaluation policies"""
         collect_policySteps, eval_policySteps = util.getPolicies(networkDict, nameDict, nameList, alg)
         """initialize trainers for all network"""
         util.initializeTrainer(networkDict)
-
         # """create checkpoint to resume training at a later stage"""
         # checkpointDict = util.checkPointInit(nameList, nameDict, networkDict, replay_buffer, train_step_counter, alg)
         # util.restoreCheckpoint(nameList, nameDict, networkDict, checkpointDict)
@@ -130,11 +128,6 @@ if __name__ == '__main__':
                 train_loss = iql.train(experience, agents, nameDict, networkDict)
             print('Iteration: {} Loss: {}'.format(num_iter, train_loss))
 
-            """unpromising trials at the early stages of the training"""
-            intermediate_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=4)
-            trial.report(np.average(intermediate_return), num_iter)
-            if trial.should_prune():
-                raise optuna.TrialPruned()
 
             if num_iter % eval_interval == 0:
                 avg_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=4)
@@ -144,8 +137,7 @@ if __name__ == '__main__':
                 joblib.dump(study, study_path)
                 return avg_return.sum()
 
-    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner(n_startup_trials=5,
-                                                               n_warmup_steps=20))
+    study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=100)
 
     duration = (time.time()-st)/60

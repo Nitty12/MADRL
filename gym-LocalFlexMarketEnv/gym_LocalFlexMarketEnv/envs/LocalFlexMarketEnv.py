@@ -3,7 +3,8 @@ from gym import spaces
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-
+import time
+import util
 
 class LocalFlexMarketEnv(gym.Env):
     """A local flexibility market environment for OpenAI gym"""
@@ -89,7 +90,6 @@ class LocalFlexMarketEnv(gym.Env):
         # set action for each agent
         for i, agent in enumerate(self.agents):
             self._set_action(action[i], agent, self.action_space[i], self.spotState)
-
         if self.spotState:
             self.spotStep()
         else:

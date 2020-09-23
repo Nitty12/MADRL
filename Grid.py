@@ -4,6 +4,8 @@ import os
 import re
 from multiprocessing import Pool
 import pickle
+import time as t
+import util
 
 
 class Grid:
@@ -231,10 +233,13 @@ class Grid:
 
     def getCurrentSensitivity(self, time, node=None):
         if node is None:
-            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1, :]
+            """get only the columns corresponding to self.loadsAndGens for vectorization"""
+            columns = self.nodeSensitivityList[:len(self.loadsAndGens.columns)]
+            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1, columns]
             if len(sensitivity) == 0:
                 """some sensitivity matrices are missing, use the previous ones instead"""
-                sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time, :]
+                sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time, columns]
+            sensitivity.columns = self.loadsAndGens.columns
         else:
             sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
                                            self.nodeSensitivityDict[node]]
@@ -242,6 +247,13 @@ class Grid:
                 """some sensitivity matrices are missing, use the previous ones instead"""
                 sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time,
                                                    self.nodeSensitivityDict[node]]
+        return sensitivity
+
+    def getSensitivity(self, time):
+        sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1, :]
+        if len(sensitivity) == 0:
+            """some sensitivity matrices are missing, use the previous ones instead"""
+            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time, :]
         return sensitivity
 
     def powerFlowApprox(self):
@@ -252,15 +264,10 @@ class Grid:
             totalLoad = 0
             totalGen = 0
             """add the contribution from households and other static agents to the lines"""
-            for node in self.loadsAndGens:
-                sensitivity = self.getCurrentSensitivity(time, node)
-                # TODO should I negate the sensitivityMat?
-                qty = self.loadsAndGens.loc[time, node]
-                self.loading.loc[time, :] += sensitivity.values * qty
-                if qty >= 0:
-                    totalLoad += qty
-                else:
-                    totalGen += qty
+            sensitivity = self.getCurrentSensitivity(time).to_numpy()
+            qty = self.loadsAndGens.loc[time, :].to_numpy()
+            qty = qty.reshape((1,-1))
+            self.loading.loc[time, :] = qty @ sensitivity.T
             """add the flex agent contribution to the lines"""
             for agent in self.flexAgents:
                 agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]" , agent.id).group(1)

@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 import os
-
+import util
+import time
 
 class SpotMarket:
     def __init__(self, spotTimePeriod = 8760, dailySpotTime = 24):
