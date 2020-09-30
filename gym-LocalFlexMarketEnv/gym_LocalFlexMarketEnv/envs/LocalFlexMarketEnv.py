@@ -5,6 +5,8 @@ import numpy as np
 import tensorflow as tf
 import time
 import util
+import pickle
+
 
 class LocalFlexMarketEnv(gym.Env):
     """A local flexibility market environment for OpenAI gym"""
@@ -18,6 +20,8 @@ class LocalFlexMarketEnv(gym.Env):
         self.nAgents = len(self.SpotMarket.participants)
         self.agents = self.SpotMarket.participants
         self.time = 0
+        self.eval = False
+        self.checkTime = True
         """If needed change the limit of rewards here:"""
         self.reward_range = (-float('inf'), float('inf'))
 
@@ -169,15 +173,33 @@ class LocalFlexMarketEnv(gym.Env):
             agent.flexBidPriceMultiplier = action[0][2*self.SpotMarket.dailySpotTime:]
 
     def spotStep(self):
+        lastTime = time.time()
         self.SpotMarket.collectBids()
         self.SpotMarket.sendDispatch()
+        if self.checkTime:
+            util.checkTime(lastTime, 'Spot step')
 
     def flexStep(self):
-        if self.DSO.checkCongestion():
+        lastTime = []
+        lastTime.append(time.time())
+        if self.DSO.checkCongestion(self.SpotMarket.bidsDF):
+            if self.checkTime:
+                util.checkTime(lastTime[-1], 'Power flow approximation')
+                lastTime.append(time.time())
             self.DSO.askFlexibility()
+            if self.checkTime:
+                util.checkTime(lastTime[-1], 'Getting flex bids')
+                lastTime.append(time.time())
             self.DSO.optFlex()
+            if self.checkTime:
+                util.checkTime(lastTime[-1], 'choosing the flexibility')
+        if self.eval:
+            with open("../results/congestionStatus.pkl", "ab") as f:
+                pickle.dump(self.DSO.grid.congestionStatus, f)
         self.DSO.endDay()
         self.SpotMarket.endDay()
+        if self.checkTime:
+            util.checkTime(lastTime[0], 'Flex step total')
 
     def render(self, mode='human'):
         if self.time % 20 == 0:

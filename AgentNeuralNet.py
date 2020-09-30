@@ -26,14 +26,14 @@ import re
 class MADDPGAgent:
     def __init__(self):
         # Hyperparameters
-        self.learning_rate = 1e-3
-        self.fc_layer_params_actor = (100,)
-        self.fc_dropout_layer_params_actor = None
-        self.fc_layer_params_critic_obs = (50,)
-        self.fc_dropout_layer_params_critic_obs = None
-        self.fc_layer_params_critic_merged = (100,)
-        self.fc_dropout_layer_params_critic_merged = None
-        self.discount_factor = 0.99
+        self.learning_rate = 0.005
+        self.fc_layer_params_actor = (75, 110)
+        self.fc_dropout_layer_params_actor = (0.2, 0.45)
+        self.fc_layer_params_critic_obs = (180, 200)
+        self.fc_dropout_layer_params_critic_obs = (0.3, 0.2)
+        self.fc_layer_params_critic_merged = (230,)
+        self.fc_dropout_layer_params_critic_merged = (0.45,)
+        self.discount_factor = 0.98
         self.actor_activation_fn = tf.keras.activations.relu
         self.critic_activation_fn = tf.keras.activations.relu
 
@@ -47,23 +47,24 @@ class MADDPGAgent:
         self.replay_buffer = None
 
     def hyperParameterInit(self, parameterDict):
-        """hyperparameter optimization with optuna"""
-        self.learning_rate = parameterDict['learning_rate']
-        self.discount_factor = parameterDict['discount_factor']
-        if parameterDict['actor_activation_fn'] == 'relu':
-            self.actor_activation_fn = tf.keras.activations.relu
-        elif parameterDict['actor_activation_fn'] == 'leaky_relu':
-            self.actor_activation_fn = tf.nn.leaky_relu
-        if parameterDict['critic_activation_fn'] == 'relu':
-            self.critic_activation_fn = tf.keras.activations.relu
-        elif parameterDict['critic_activation_fn'] == 'leaky_relu':
-            self.critic_activation_fn = tf.nn.leaky_relu
-        self.fc_layer_params_actor = parameterDict['fc_layer_params_actor']
-        self.fc_dropout_layer_params_actor = parameterDict['fc_dropout_layer_params_actor']
-        self.fc_layer_params_critic_obs = parameterDict['fc_layer_params_critic_obs']
-        self.fc_dropout_layer_params_critic_obs = parameterDict['fc_dropout_layer_params_critic_obs']
-        self.fc_layer_params_critic_merged = parameterDict['fc_layer_params_critic_merged']
-        self.fc_dropout_layer_params_critic_merged = parameterDict['fc_dropout_layer_params_critic_merged']
+        if parameterDict is not None:
+            """hyperparameter optimization with optuna"""
+            self.learning_rate = parameterDict['learning_rate']
+            self.discount_factor = parameterDict['discount_factor']
+            if parameterDict['actor_activation_fn'] == 'relu':
+                self.actor_activation_fn = tf.keras.activations.relu
+            elif parameterDict['actor_activation_fn'] == 'leaky_relu':
+                self.actor_activation_fn = tf.nn.leaky_relu
+            if parameterDict['critic_activation_fn'] == 'relu':
+                self.critic_activation_fn = tf.keras.activations.relu
+            elif parameterDict['critic_activation_fn'] == 'leaky_relu':
+                self.critic_activation_fn = tf.nn.leaky_relu
+            self.fc_layer_params_actor = parameterDict['fc_layer_params_actor']
+            self.fc_dropout_layer_params_actor = parameterDict['fc_dropout_layer_params_actor']
+            self.fc_layer_params_critic_obs = parameterDict['fc_layer_params_critic_obs']
+            self.fc_dropout_layer_params_critic_obs = parameterDict['fc_dropout_layer_params_critic_obs']
+            self.fc_layer_params_critic_merged = parameterDict['fc_layer_params_critic_merged']
+            self.fc_dropout_layer_params_critic_merged = parameterDict['fc_dropout_layer_params_critic_merged']
 
     def initialize(self, train_env, train_step_counter, index):
         self.ActorNetwork = tf_agents.agents.ddpg.actor_network.ActorNetwork(
@@ -103,15 +104,16 @@ class MADDPGAgent:
 
 class QAgent:
     def __init__(self, type):
-        self.fc_layer_params = (100,)
-        self.dropout_layer_params = None
-        self.learning_rate = 1e-3
+        self.fc_layer_params = (265,)
+        self.dropout_layer_params = (0.25,)
+        self.learning_rate = 0.09
         self.type = type
 
     def hyperParameterInit(self, parameterDict):
-        self.learning_rate = parameterDict['learning_rate']
-        self.fc_layer_params = parameterDict['fc_layer_params']
-        self.dropout_layer_params = parameterDict['fc_dropout_layer_params']
+        if parameterDict is not None:
+            self.learning_rate = parameterDict['learning_rate']
+            self.fc_layer_params = parameterDict['fc_layer_params']
+            self.dropout_layer_params = parameterDict['fc_dropout_layer_params']
 
     def initialize(self, train_env, train_step_counter, index):
         if self.type == 'sbm_spot':
@@ -272,8 +274,8 @@ class QMIX():
     def __init__(self, nAgents, time_step_spec, train_step_counter, summary_writer=None,
                  debug_summaries=False, summarize_grads_and_vars=False, enable_summaries=True):
         self.hyper_hidden_dim = 256
-        self.qmix_hidden_dim = 64
-        self.learning_rate = 0.001
+        self.qmix_hidden_dim = 32
+        self.learning_rate = 0.07
         self.nAgents =nAgents
         self.time_step_spec = time_step_spec
         self._epsilon_greedy = 0.1
@@ -281,20 +283,11 @@ class QMIX():
         self._td_errors_loss_fn = common.element_wise_squared_loss
         self._gamma = 0.99
         self._update_target = self._get_target_updater(tau=0.01, period=10)
-        self.train_step_counter = train_step_counter
-        self.summary_writer = summary_writer
-        self.debug_summaries = debug_summaries
-        self.summarize_grads_and_vars = summarize_grads_and_vars
-        self.enable_summaries = enable_summaries
-
-    def hyperParameterInit(self, parameterDict):
-        # self.hyper_hidden_dim = parameterDict['hyper_hidden_dim']
-        # self.qmix_hidden_dim = parameterDict['qmix_hidden_dim']
-        # self.learning_rate = parameterDict['qmix_learning_rate']
+        self._optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate)
         fc_layer_params = {}
         dropout_layer_params = {}
         activation_fn = {}
-        fc_layer_params['hyper_w1'] = (self.hyper_hidden_dim, self.nAgents * self.qmix_hidden_dim)
+        fc_layer_params['hyper_w1'] = (self.hyper_hidden_dim, self.nAgents*self.qmix_hidden_dim)
         dropout_layer_params['hyper_w1'] = None
         activation_fn['hyper_w1'] = tf.keras.activations.relu
         fc_layer_params['hyper_w2'] = (self.hyper_hidden_dim, self.qmix_hidden_dim)
@@ -305,13 +298,16 @@ class QMIX():
         fc_layer_params['hyper_b2'] = (self.qmix_hidden_dim, 1)
         dropout_layer_params['hyper_b2'] = None
         activation_fn['hyper_b2'] = tf.keras.activations.relu
-        self._optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate)
         self.QMIXNet = QMIXMixingNetwork(fc_layer_params=fc_layer_params,
                                          dropout_layer_params=dropout_layer_params,
                                          activation_fn=activation_fn,
                                          nAgents=self.nAgents, qmix_hidden_dim=self.qmix_hidden_dim)
         self.TargetQMIXNet = copy.deepcopy(self.QMIXNet)
-
+        self.train_step_counter = train_step_counter
+        self.summary_writer = summary_writer
+        self.debug_summaries = debug_summaries
+        self.summarize_grads_and_vars = summarize_grads_and_vars
+        self.enable_summaries = enable_summaries
 
     def _get_target_updater(self, tau=1.0, period=1):
         """Performs a soft update of the target network parameters.

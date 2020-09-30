@@ -23,6 +23,7 @@ class Grid:
         self.numLines = numLines
         self.nodes = []
         self.lines = []
+        self.agentNodes = []
         self.data = None
         self.loading = None
         self.HVTrafoNode = None
@@ -73,6 +74,12 @@ class Grid:
             """Calculate the rated current from the data"""
             ratedI = self.data.I_A / (0.01 * self.data.Loading_percent)
             self.data = self.data.assign(I_rated_A=ratedI)
+            """seems like all current measurements are in the LV side,
+                so multiplying with the turns ratio 110/10 and 10/.4"""
+            self.data.loc[self.data['Name']=='Trafo_HSMS', 'I_rated_A'] *= 11
+            self.data.loc[self.data['Name']=='Trafo_HSMS_par', 'I_rated_A'] *= 11
+            LVTrafos = self.data.loc[self.data['Un_to_kV']==0.4, 'Name'].values
+            self.data.loc[self.data['Name'].isin(LVTrafos), 'I_rated_A'] *= 25
             self.data.to_pickle("../inputs/CBCO_Results_.pkl")
 
         for name in self.data['Name']:
@@ -95,19 +102,6 @@ class Grid:
                                     columns=linesAndNodes, index=self.dailyTimes)
         self.congestionStatus = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), False),
                                              columns=linesAndNodes, index=self.dailyTimes)
-
-    def isCongested(self):
-        self.powerFlowApprox()
-        ratedIMat = self.data.loc[:, 'I_rated_A'].to_numpy().reshape(-1, 1)
-        self.congestionStatus.index = self.dailyTimes
-        self.congestionStatus.loc[:, :] = self.loading.abs().loc[:, :] > ratedIMat.T
-        with open("../results/congestionStatus.pkl", "ab") as f:
-            pickle.dump(self.congestionStatus, f)
-        if self.congestionStatus.any(axis=None):
-            self.reqdFlexTimes = self.dailyTimes[self.congestionStatus.any(axis='columns').values]
-            return True
-        else:
-            return False
 
     def getLoadsAndGens(self):
         path = os.getcwd()
@@ -219,6 +213,8 @@ class Grid:
                 dfList = pool.map(self.readSensi, fileList)
             self.sensitivity = pd.concat(dfList, axis=0, ignore_index=False)
             self.sensitivity.to_pickle("../inputs/SensiDFNew.pkl")
+        for agent in self.flexAgents:
+            self.agentNodes.append('Standort_' + re.search("k(\d+)[n,d,l]" , agent.id).group(1))
 
     def readSensi(self, file):
         df = pd.read_csv(file, sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
@@ -240,6 +236,13 @@ class Grid:
                 """some sensitivity matrices are missing, use the previous ones instead"""
                 sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time, columns]
             sensitivity.columns = self.loadsAndGens.columns
+        elif isinstance(node, list):
+            """get the sensitivities of all the agents"""
+            columns = [self.nodeSensitivityDict[n] for n in node]
+            sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1, columns]
+            if len(sensitivity) == 0:
+                """some sensitivity matrices are missing, use the previous ones instead"""
+                sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time, columns]
         else:
             sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time + 1,
                                            self.nodeSensitivityDict[node]]
@@ -256,7 +259,18 @@ class Grid:
             sensitivity = self.sensitivity.loc[self.sensitivity['time_step'] == time, :]
         return sensitivity
 
-    def powerFlowApprox(self):
+    def isCongested(self, spotBidDF):
+        self.powerFlowApprox(spotBidDF)
+        ratedIMat = self.data.loc[:, 'I_rated_A'].to_numpy().reshape(-1, 1)
+        self.congestionStatus.index = self.dailyTimes
+        self.congestionStatus.loc[:, :] = self.loading.abs().loc[:, :] > ratedIMat.T
+        if self.congestionStatus.any(axis=None):
+            self.reqdFlexTimes = self.dailyTimes[self.congestionStatus.any(axis='columns').values]
+            return True
+        else:
+            return False
+
+    def powerFlowApprox(self, spotBidDF):
         linesAndNodes = self.sensitivity.index[self.sensitivity['time_step'] == 1].values
         self.loading = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), 0.0),
                                     columns=linesAndNodes, index=self.dailyTimes)
@@ -265,20 +279,20 @@ class Grid:
             totalGen = 0
             """add the contribution from households and other static agents to the lines"""
             sensitivity = self.getCurrentSensitivity(time).to_numpy()
-            qty = self.loadsAndGens.loc[time, :].to_numpy()
-            qty = qty.reshape((1,-1))
+            qty = self.loadsAndGens.loc[time, :].to_numpy().reshape((1,-1))
             self.loading.loc[time, :] = qty @ sensitivity.T
+            if np.sum(qty) >= 0:
+                totalLoad += np.sum(qty)
+            else:
+                totalGen += np.sum(qty)
             """add the flex agent contribution to the lines"""
-            for agent in self.flexAgents:
-                agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]" , agent.id).group(1)
-                sensitivity = self.getCurrentSensitivity(time, agentNode)
-                # TODO should I negate the sensitivityMat?
-                qty = agent.dailySpotBid.loc[time, 'qty_bid']
-                self.loading.loc[time, :] += sensitivity.values * qty
-                if qty >= 0:
-                    totalLoad += qty
-                else:
-                    totalGen += qty
+            qty = spotBidDF.loc[time, :].to_numpy().reshape((1,-1))
+            sensitivity = self.getCurrentSensitivity(time, self.agentNodes).to_numpy()
+            self.loading.loc[time, :] += (qty @ sensitivity.T).ravel()
+            if np.sum(qty) >= 0:
+                totalLoad += np.sum(qty)
+            else:
+                totalGen += np.sum(qty)
             """include remaining power flow from HV transformer"""
             sensitivity = self.getCurrentSensitivity(time, self.HVTrafoNode)
             self.loading.loc[time, :] += sensitivity.values * (totalLoad + totalGen)

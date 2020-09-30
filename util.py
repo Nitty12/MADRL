@@ -323,11 +323,13 @@ def one_step(environment, policySteps, alg):
 def compute_avg_return(environment, policySteps, alg, num_steps=10):
     total_return = None
     for step in range(num_steps):
+        environment.pyenv.envs[0].gym.eval = True
         _, _, next_time_step = one_step(environment, policySteps, alg)
         if step == 0:
             total_return = next_time_step.reward
         else:
             total_return += next_time_step.reward
+    environment.pyenv.envs[0].gym.eval = False
     avg_return = total_return / num_steps
     return avg_return.numpy()[0]
 

@@ -8,6 +8,7 @@ class SpotMarket:
     def __init__(self, spotTimePeriod = 8760, dailySpotTime = 24):
         self.participants = []
         self.bids = {}
+        self.bidsDF = None
         self.spotTimePeriod = spotTimePeriod
         self.dailySpotTime = dailySpotTime
         self.day = 0
@@ -28,6 +29,9 @@ class SpotMarket:
     def addParticipants(self, participants):
         # participants is a list of FlexAgents
         self.participants.extend(participants)
+        agentNameList = [agent.id for agent in self.participants]
+        self.bidsDF = pd.DataFrame(np.full((self.dailySpotTime, len(self.participants)), 0.0), columns=agentNameList,
+                                   index=self.dailyTimes)
 
     def importPrice(self):
         path = os.getcwd()
@@ -37,10 +41,14 @@ class SpotMarket:
         self.MCP.columns = ['time', 'price']
 
     def collectBids(self):
+        self.bidsDF.loc[:, :] = 0.0
+        self.bidsDF.index=self.dailyTimes
         for participant in self.participants:
             participant.makeSpotBid()
             assert len(participant.getSpotBid().index) == self.dailySpotTime, 'Length of spot market and bid not equal'
-            self.bids[participant.getID()] = participant.getSpotBid()
+            spotBid = participant.getSpotBid()
+            self.bids[participant.getID()] = spotBid
+            self.bidsDF.loc[:, participant.id] = spotBid.loc[:, 'qty_bid']
             participant.setMCP(self.MCP.loc[self.nextDayTimes, 'price'].values)
 
     def sendDispatch(self):
