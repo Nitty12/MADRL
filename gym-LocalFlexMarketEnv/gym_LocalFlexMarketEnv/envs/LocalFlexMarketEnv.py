@@ -20,8 +20,9 @@ class LocalFlexMarketEnv(gym.Env):
         self.nAgents = len(self.SpotMarket.participants)
         self.agents = self.SpotMarket.participants
         self.time = 0
-        self.eval = False
-        self.checkTime = True
+        self.startDay = 0
+        self.endDay = self.SpotMarket.spotTimePeriod/self.SpotMarket.dailySpotTime
+        self.checkTime = False
         """If needed change the limit of rewards here:"""
         self.reward_range = (-float('inf'), float('inf'))
 
@@ -119,11 +120,10 @@ class LocalFlexMarketEnv(gym.Env):
         self.spotState = True
 
         # reset the environment
-        self.SpotMarket.reset()
-        self.DSO.flexMarket.reset()
-        self.DSO.grid.reset()
+        self.SpotMarket.reset(self.startDay)
+        self.DSO.reset()
         for agent in self.agents:
-            agent.reset()
+            agent.reset(self.startDay)
 
         # record observations for each agent
         obs = []
@@ -138,14 +138,14 @@ class LocalFlexMarketEnv(gym.Env):
 
     # get observation for a particular agent
     def _get_obs(self, agent):
-        MCP, spotDispatch, flexDispatch, spotState = agent.getObservation()
+        MCP, spotDispatch, flexDispatch, spotState = agent.getObservation(self.startDay)
         return np.hstack((MCP, spotDispatch, flexDispatch, spotState))
 
     # get dones for a particular agent
     def _get_done(self, agent):
         """when to reset the environment?
         currently after 1 year"""
-        if self.SpotMarket.day + 1 >= self.SpotMarket.spotTimePeriod/self.SpotMarket.dailySpotTime:
+        if self.SpotMarket.day + 1 >= self.endDay:
             return True
         else:
             return False
@@ -193,9 +193,6 @@ class LocalFlexMarketEnv(gym.Env):
             self.DSO.optFlex()
             if self.checkTime:
                 util.checkTime(lastTime[-1], 'choosing the flexibility')
-        if self.eval:
-            with open("../results/congestionStatus.pkl", "ab") as f:
-                pickle.dump(self.DSO.grid.congestionStatus, f)
         self.DSO.endDay()
         self.SpotMarket.endDay()
         if self.checkTime:

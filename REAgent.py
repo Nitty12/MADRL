@@ -7,8 +7,9 @@ from FlexAgent import FlexAgent
 
 class REAgent(FlexAgent):
     def __init__(self, id, location=None, minPower = 0, maxPower = 0, voltageLevel= 0, marginalCost = 0,
-                 feedInPremium = None, genSeries=None):
-        super().__init__(id=id, location=location, minPower=minPower, maxPower=maxPower, marginalCost=marginalCost)
+                 feedInPremium = None, genSeries=None, startDay=0, endDay=365):
+        super().__init__(id=id, location=location, minPower=minPower, maxPower=maxPower, marginalCost=marginalCost,
+                         startDay=startDay, endDay=endDay)
         self.feedInPremium = feedInPremium
         """Assumption: the timeseries data contains -ve qty (generation)
             In spot bids, it can reduce the generation so, spot limits are (0 to 1)*generation forecast
@@ -18,10 +19,10 @@ class REAgent(FlexAgent):
                 so, flex bid limits are (-1 to 0)*spot dispatched qty
             """
         self.genSeries = genSeries
-        self.reset()
+        self.reset(startDay)
 
-    def reset(self):
-        super().reset()
+    def reset(self, startDay=0):
+        super().reset(startDay)
         self.spotBid.loc[:, 'qty_bid'] = self.genSeries
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
         self.flexBid.loc[:, 'qty_bid'] = self.genSeries
@@ -47,8 +48,7 @@ class REAgent(FlexAgent):
         """
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
         # Here negative of qty is used for reward because generation is negative qty
-        self.dailyRewardTable.loc[:, 'reward_spot'] = (self.dailySpotBid.loc[:, 'MCP'] -
-                                                       self.marginalCost + self.feedInPremium) * \
+        self.dailyRewardTable.loc[:, 'reward_spot'] = (self.dailySpotBid.loc[:, 'MCP'] + self.feedInPremium) * \
                                                       -self.dailySpotBid.loc[:, 'qty_bid']
         totalReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_spot'] = \

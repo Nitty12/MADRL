@@ -12,8 +12,8 @@ class FlexMarket:
         self.dailyTimes = None
         self.reset()
 
-    def reset(self):
-        self.day = 0
+    def reset(self, startDay=0):
+        self.day = startDay
         self.dailyTimes = np.arange(self.day * self.dailyFlexTime, (self.day + 1) * self.dailyFlexTime)
 
     def addParticipants(self, participants):

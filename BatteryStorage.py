@@ -5,9 +5,10 @@ from FlexAgent import FlexAgent
 
 class BatStorage(FlexAgent):
     def __init__(self, id, location=[0, 0], minPower = 0, maxPower = 0, voltageLevel= 0, marginalCost=0,
-                 maxCapacity=0, efficiency=1.0, SOC=1.0, minSOC=0.2):
+                 maxCapacity=0, efficiency=1.0, SOC=1.0, minSOC=0.2, startDay=0, endDay=365):
 
-        super().__init__(id=id, location=location, minPower = minPower, maxPower=maxPower, marginalCost=marginalCost)
+        super().__init__(id=id, location=location, minPower = minPower, maxPower=maxPower, marginalCost=marginalCost,
+                         startDay=startDay, endDay=endDay)
         self.type = "Battery Storage"
         self.maxCapacity = maxCapacity  # capacity in MWh
         """
@@ -34,10 +35,10 @@ class BatStorage(FlexAgent):
         self.flexChangedEnergy = 0
         self.spotChangedEnergy = 0
 
-        self.reset()
+        self.reset(startDay)
 
-    def reset(self):
-        super().reset()
+    def reset(self, startDay=0):
+        super().reset(startDay)
         self.remainingEnergy = self.minCapacity
         self.SOC = 1.0
         self.flexChangedEnergy = 0
@@ -144,7 +145,7 @@ class BatStorage(FlexAgent):
     def spotMarketReward(self, time, qty):
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
         # Here negative of qty is used for reward because generation is negative qty
-        self.dailyRewardTable.loc[time, 'reward_spot'] = (self.dailySpotBid.loc[time, 'MCP'] - self.marginalCost) * -qty
+        self.dailyRewardTable.loc[time, 'reward_spot'] = self.dailySpotBid.loc[time, 'MCP'] * -qty
         self.dailyRewardTable.loc[self.penalizeTimes, 'reward_spot'] = self.penaltyViolation
         totalReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_spot'] \

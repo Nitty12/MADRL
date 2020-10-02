@@ -4,14 +4,15 @@ from FlexAgent import FlexAgent
 
 
 class DSM(FlexAgent):
-    def __init__(self, id, location=[0, 0], maxPower = 0, marginalCost = 0, scheduledLoad=None):
+    def __init__(self, id, location=[0, 0], maxPower = 0, marginalCost = 0, scheduledLoad=None, startDay=0, endDay=365):
 
-        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
+        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost,
+                         startDay=startDay, endDay=endDay)
         self.type = "Demand Side Management"
-        self.scheduledLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                                'load': scheduledLoad})
-        self.baseLoad = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                           'load': 0.2*scheduledLoad})
+        self.scheduledLoad = pd.DataFrame(data={'time': self.totalTimes,
+                                                'load': scheduledLoad}, index=self.totalTimes)
+        self.baseLoad = pd.DataFrame(data={'time': self.totalTimes,
+                                           'load': 0.2*scheduledLoad}, index=self.totalTimes)
         """spotBidMultiplier of DSM agent is used to redistribute the difference (P_total - P_base)
             of each hour : To incorporate the constraints
                                     if for each hour P_total > Pmax --> Negative rewards
@@ -24,14 +25,15 @@ class DSM(FlexAgent):
         self.lowFlexBidLimit = -1
         self.highFlexBidLimit = 1
         """if status is True, the time is non flexible time"""
-        self.nonFlexibleTimes = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
-                                                   'status': np.full(self.spotTimePeriod, False)})
+        self.nonFlexibleTimes = pd.DataFrame(data={'time': self.totalTimes,
+                                                   'status': np.full(self.spotTimePeriod, False)},
+                                             index=self.totalTimes)
         # TODO initialize the non available times
 
-        self.reset()
+        self.reset(startDay)
 
-    def reset(self):
-        super().reset()
+    def reset(self, startDay=0):
+        super().reset(startDay)
         """changing spot qty bid from maxPower to scheduled load"""
         self.spotBid.loc[:, 'qty_bid'] = self.scheduledLoad.loc[:, 'load']
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]

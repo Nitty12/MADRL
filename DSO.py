@@ -8,10 +8,34 @@ import time as t
 
 
 class DSO:
-    def __init__(self, grid):
+    def __init__(self, grid, start, end, dailySpotTime=24):
         self.flexAgents = []
         self.flexMarket = FlexMarket()
         self.grid = grid
+        self.start =start
+        self.end = end
+        self.dailySpotTime = dailySpotTime
+        self.totalTimes = np.arange(self.start * self.dailySpotTime, self.end * self.dailySpotTime)
+        self.numTopFivePercent = round(len(self.grid.data) * .05)
+        self.numTopTwoAndHalfPercent = round(len(self.grid.data) * .025)
+        self.congestionDetails = pd.DataFrame(data={'time': self.totalTimes,
+                                                    'congested': np.full(len(self.totalTimes), 0),
+                                                    'previous congested': np.full(len(self.totalTimes), 0),
+                                                    'top 5 percent loading': np.full(len(self.totalTimes), 0.0),
+                                                    'previous top 5 percent loading': np.full(len(self.totalTimes), 0.0),
+                                                    'top 2.5 percent loading': np.full(len(self.totalTimes), 0.0),
+                                                    'previous top 2.5 percent loading': np.full(len(self.totalTimes), 0.0)},
+                                         index=self.totalTimes)
+
+    def reset(self):
+        self.flexMarket.reset(self.start)
+        self.grid.reset(self.start)
+        self.congestionDetails.loc[:, 'previous congested'] = self.congestionDetails.loc[:, 'congested']
+        self.congestionDetails.loc[:, 'previous top 5 percent loading'] = self.congestionDetails.loc[:, 'top 5 percent loading']
+        self.congestionDetails.loc[:, 'previous top 2.5 percent loading'] = self.congestionDetails.loc[:, 'top 2.5 percent loading']
+        self.congestionDetails.loc[:, 'congested'] = 0
+        self.congestionDetails.loc[:, 'top 5 percent loading'] = 0.0
+        self.congestionDetails.loc[:, 'top 2.5 percent loading'] = 0.0
 
     def checkCongestion(self, spotBidDF):
         status = self.grid.isCongested(spotBidDF)
@@ -73,8 +97,15 @@ class DSO:
                                        'accepted': np.full(nBids, False)})
         currentSensitivity = self.grid.getSensitivity(time)
         """congested lines/ nodes at this particular time"""
-        congested = self.grid.data.loc[self.grid.congestionStatus.loc[time, :].values, 'Name'].values
-        reqdFlexI_A = self.grid.data.loc[self.grid.data['Name'].isin(congested), 'I_rated_A'].values - \
+        congested = self.grid.data.loc[self.grid.congestionStatus.loc[time, :].values].index
+        self.congestionDetails.loc[time, 'congested'] = len(congested)
+        loadingTopFivePercent = (self.grid.loading.loc[time, :].abs()*100/
+                                 self.grid.data.loc[:, 'I_rated_A']).sort_values(ascending=False)[:self.numTopFivePercent].mean()
+        loadingTopTwoAndHalfPercent = (self.grid.loading.loc[time, :].abs()*100/
+                                 self.grid.data.loc[:, 'I_rated_A']).sort_values(ascending=False)[:self.numTopTwoAndHalfPercent].mean()
+        self.congestionDetails.loc[time, 'top 5 percent loading'] = loadingTopFivePercent
+        self.congestionDetails.loc[time, 'top 2.5 percent loading'] = loadingTopTwoAndHalfPercent
+        reqdFlexI_A = self.grid.data.loc[congested, 'I_rated_A'].values - \
                       np.abs(self.grid.loading.loc[time, congested].values)
         """sorting the required flexibility in reverse order to solve the biggest one first"""
         sortedReqdFlexI_A = reqdFlexI_A[np.abs(reqdFlexI_A).argsort()][::-1]
@@ -148,7 +179,7 @@ class DSO:
                     acceptedBids = bids.loc[acceptedAgentID, 'qty_bid']
                     sensi = sensitivityFlexAgents.loc[acceptedAgentID, remainingCongestedLine]
                     self.grid.loading.loc[time, remainingCongestedLine] += acceptedBids * sensi
-                sortedReqdFlexI_A[i + 1] = self.grid.data.loc[self.grid.data['Name'] == remainingCongestedLine,
+                sortedReqdFlexI_A[i + 1] = self.grid.data.loc[remainingCongestedLine,
                                                               'I_rated_A'] - np.abs(self.grid.loading.loc[time,
                                                                                                           remainingCongestedLine])
         return sortedReqdFlexI_A

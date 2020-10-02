@@ -17,8 +17,8 @@ class SpotMarket:
         self.MCP = None
         self.reset()
 
-    def reset(self):
-        self.day = 0
+    def reset(self, startDay=0):
+        self.day = startDay
         self.dailyTimes = np.arange(self.day * self.dailySpotTime, (self.day + 1) * self.dailySpotTime)
         self.nextDayTimes = np.arange((self.day + 1) * self.dailySpotTime, (self.day +2) * self.dailySpotTime)
         # hourly market clearing price

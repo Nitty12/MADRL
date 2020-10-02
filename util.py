@@ -5,9 +5,6 @@ from HeatPump import HeatPump
 from BatteryStorage import BatStorage
 from DSM import DSM
 from AgentNeuralNet import MADDPGAgent, QAgent
-# from SpotMarket import SpotMarket
-# from DSO import DSO
-# from Grid import Grid
 import gym
 import numpy as np
 import pandas as pd
@@ -17,17 +14,17 @@ from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import tf_py_environment
 from tf_agents.trajectories import trajectory
 from tf_agents.trajectories import policy_step
-from tf_agents.eval import metric_utils
-from tf_agents.metrics import tf_metrics
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.utils import common
 from tf_agents.environments import suite_gym
 import os
 import time
 import re
+import random
+import pickle
 
 
-def agentsInit(alg):
+def agentsInit(alg, startDay=0, endDay=365, numAgentsEachType=5):
     '''generation is -ve qty and load is +ve qty'''
     path = os.getcwd()
     if os.path.isfile("../inputs/RA_RD_Import_.pkl"):
@@ -61,51 +58,61 @@ def agentsInit(alg):
     for name in data['Name']:
         if name.endswith('_nsHeimSpeicherErsatzeinsp'):
             homeStorageList.append(name)
-
+    startHour = startDay*24
+    endHour = endDay*24-1
     agentsDict = {}
-    """the number of agents in each type to consider as flexibility"""
-    numAgents = 10
-    """negate the PV and Wind timeseries to make generation qty -ve"""
-    for name in genSeriesPV.columns[:numAgents]:
+    names = genSeriesPV.columns.to_series().sample(n=numAgentsEachType).values
+    for name in names:
         name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesPV.filter(like=name).columns.values[0]
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, genSeries=genSeriesPV.loc[:, colName])
-    for name in genSeriesWind.columns[:numAgents]:
+                               voltageLevel=voltage_level, genSeries=genSeriesPV.loc[startHour:endHour, colName],
+                               startDay=startDay, endDay=endDay)
+    names = genSeriesWind.columns.to_series().sample(n=numAgentsEachType).values
+    for name in names:
         name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         colName = genSeriesWind.filter(like=name).columns.values[0]
         agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, genSeries=genSeriesWind.loc[:, colName])
-    for name in homeStorageList[:numAgents]:
+                               voltageLevel=voltage_level, genSeries=genSeriesWind.loc[startHour:endHour, colName],
+                               startDay=startDay, endDay=endDay)
+    names = random.sample(homeStorageList, numAgentsEachType)
+    for name in names:
         name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                                      voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost = 30)
-    for name in chargingSeriesEV.columns[:numAgents]:
+                                      voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost = 30,
+                               startDay=startDay, endDay=endDay)
+    names = chargingSeriesEV.columns.to_series().sample(n=numAgentsEachType).values
+    for name in names:
         name = re.search('k.*', name).group(0)
         colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
         agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
-                                    absenceTimes=absenceSeriesEV.loc[:, colName],
-                                    consumption=consumptionSeriesEV.loc[:, colName], marginalCost = 30)
-    for name in loadingSeriesHP.columns[:numAgents]:
+                                    absenceTimes=absenceSeriesEV.loc[startDay:endDay, colName],
+                                    consumption=consumptionSeriesEV.loc[startDay:endDay, colName], marginalCost = 30,
+                               startDay=startDay, endDay=endDay)
+    names = loadingSeriesHP.columns.to_series().sample(n=numAgentsEachType).values
+    for name in names:
         name = re.search('k.*', name).group(0)
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesHP.filter(like=name).columns.values[0]
         agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
                                     maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
-                                    scheduledLoad=loadingSeriesHP.loc[:, colName], marginalCost = 30)
-    for name in loadingSeriesDSM.columns[:numAgents]:
+                                    scheduledLoad=loadingSeriesHP.loc[startHour:endHour, colName], marginalCost = 30,
+                               startDay=startDay, endDay=endDay)
+    names = loadingSeriesDSM.columns.to_series().sample(n=numAgentsEachType).values
+    for name in names:
         name = re.search('k.*', name).group(0)
         #TODO check if the latest RA_RD_Import_ file contains maxpower
         colName = loadingSeriesDSM.filter(like=name).columns.values[0]
         agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
-                               scheduledLoad=loadingSeriesDSM.loc[:, colName], marginalCost = 30)
+                               scheduledLoad=loadingSeriesDSM.loc[startHour:endHour, colName], marginalCost = 30,
+                               startDay=startDay, endDay=endDay)
 
     nameDict, networkDict = RLNetworkInit(agentsDict, alg)
 
-    return agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, \
+    return agentsDict, nameDict, networkDict, numAgentsEachType, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, \
            loadingSeriesDSM
 
 
@@ -323,15 +330,13 @@ def one_step(environment, policySteps, alg):
 def compute_avg_return(environment, policySteps, alg, num_steps=10):
     total_return = None
     for step in range(num_steps):
-        environment.pyenv.envs[0].gym.eval = True
         _, _, next_time_step = one_step(environment, policySteps, alg)
         if step == 0:
             total_return = next_time_step.reward
         else:
             total_return += next_time_step.reward
-    environment.pyenv.envs[0].gym.eval = False
     avg_return = total_return / num_steps
-    return avg_return.numpy()[0]
+    return avg_return.numpy()[0], total_return.numpy()[0]
 
 
 def collect_step(environment, policySteps, buffer, alg):
@@ -601,6 +606,38 @@ def trainMADDPGAgents(experience, agents, nameDict, networkDict, nameList, typeL
         with train_summary_writer.as_default():
             tf.summary.scalar('loss', avg_loss, step=step)
     return avg_loss
+
+def saveCheckpoint(nameDict, nameList, checkpointDict, train_step_counter, alg):
+    for i, agentName in enumerate(nameList):
+        agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agentName).group(1)
+        for type, names in nameDict[agentNode].items():
+            if agentName in names:
+                if alg == 'MADDPG':
+                    """save the training state of all agents"""
+                    checkpointDict[agentName].save(train_step_counter)
+                    break
+                elif alg=='QMIX' or alg=='IQL':
+                    for i in range(1, 4):
+                        checkpointDict[agentName + '_' + str(i)].save(train_step_counter)
+                    break
+    """save the Replay Buffer"""
+    checkpointDict['ReplayBuffer'].save(train_step_counter)
+
+def saveToFile(avgReturns, totalReturns, loss, congestionDetails, alg):
+    if not os.path.exists("../results/" + alg):
+        os.makedirs("../results/" + alg)
+    filename = "../results/" + alg + "/avgReturns.pkl"
+    with open(filename, "ab") as f:
+        pickle.dump(avgReturns, f)
+    filename = "../results/" + alg + "/totalReturns.pkl"
+    with open(filename, "ab") as f:
+        pickle.dump(totalReturns, f)
+    filename = "../results/" + alg + "/loss.pkl"
+    with open(filename, "ab") as f:
+        pickle.dump(loss, f)
+    filename = "../results/" + alg + "/congestionDetails.pkl"
+    with open(filename, "wb") as f:
+        pickle.dump(congestionDetails, f)
 
 def checkTime(lastTime, process):
     presentTime = time.time()

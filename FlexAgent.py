@@ -4,8 +4,8 @@ import pandas as pd
 
 class FlexAgent:
     def __init__(self, id, location=None, minPower = 0, maxPower = 0, marginalCost = 30,
-                 spotTimePeriod = 8760, dailySpotTime = 24, flexTimePeriod = 0, needCounterTrade = False,
-                 discountFactor = 0.7, learningRate = 0.001):
+                 dailySpotTime = 24, needCounterTrade = False,
+                 startDay=0, endDay=365):
         self.id = id
         self.node = ""
         self.type = "unknown"
@@ -13,14 +13,16 @@ class FlexAgent:
         self.minPower = minPower
         self.maxPower = maxPower
         self.marginalCost = marginalCost
-        self.spotTimePeriod = spotTimePeriod
+        self.startDay = startDay
+        self.endDay = endDay
         self.dailySpotTime = dailySpotTime
-        self.day = None
-        self.dailyTimes = None
+        self.spotTimePeriod = (self.endDay - self.startDay)*self.dailySpotTime
+        self.day = startDay
+        self.dailyTimes = np.arange(self.day * self.dailySpotTime, (self.day + 1) * self.dailySpotTime)
+        self.totalTimes = np.arange(self.startDay * self.dailySpotTime, self.endDay * self.dailySpotTime)
         self.dailyFlexTime = 24
-        self.flexTimePeriod = 8760
+        self.flexTimePeriod = (self.endDay - self.startDay)*self.dailySpotTime
         self.spotTimeInterval = 1  # in hours
-        self.flexTimeInterval = 0.25  # in hours
         self.needCounterTrade = needCounterTrade  # Is counter trading responsibility of FlexAgent?
         self.spotBid = None
         self.dailySpotBid = None
@@ -39,8 +41,6 @@ class FlexAgent:
         self.flexBidMultiplier = None
         self.flexBidPriceMultiplier = None
 
-        self.discountFactor = discountFactor
-        self.learningRate = learningRate
         self.rewardCount = 0.0
         # self.NN = AgentNeuralNet()
         """during flex bid some agents like 
@@ -60,22 +60,26 @@ class FlexAgent:
         self.MCP = []
 
     def reset(self, *args, **kwargs):
-        self.day = 0
+        self.day = args[0]
         self.dailyTimes = np.arange(self.day * self.dailySpotTime, (self.day + 1) * self.dailySpotTime)
-        self.spotBid = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
+        self.totalTimes = np.arange(self.startDay * self.dailySpotTime, self.endDay * self.dailySpotTime)
+        self.spotBid = pd.DataFrame(data={'time': self.totalTimes,
                                           'qty_bid': np.full(self.spotTimePeriod, self.maxPower, dtype=float),
                                           'dispatched': np.full(self.spotTimePeriod, False),
-                                          'MCP': np.full(self.spotTimePeriod, 0.0, dtype=float)})
+                                          'MCP': np.full(self.spotTimePeriod, 0.0, dtype=float)},
+                                    index=self.totalTimes)
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
-        self.flexBid = pd.DataFrame(data={'time': np.arange(self.flexTimePeriod),
+        self.flexBid = pd.DataFrame(data={'time': self.totalTimes,
                                           'qty_bid': np.full(self.flexTimePeriod, self.maxPower, dtype=float),
                                           'price': np.full(self.flexTimePeriod, self.marginalCost, dtype=float),
                                           'flex_capacity': np.full(self.flexTimePeriod, self.maxPower, dtype=float),
-                                          'dispatched': np.full(self.flexTimePeriod, False)})
+                                          'dispatched': np.full(self.flexTimePeriod, False)},
+                                    index=self.totalTimes)
         self.dailyFlexBid = self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)]
-        self.rewardTable = pd.DataFrame(data={'time': np.arange(self.spotTimePeriod),
+        self.rewardTable = pd.DataFrame(data={'time': self.totalTimes,
                                               'reward_spot': np.full(self.spotTimePeriod, 0, dtype=float),
-                                              'reward_flex': np.full(self.spotTimePeriod, 0, dtype=float)})
+                                              'reward_flex': np.full(self.spotTimePeriod, 0, dtype=float)},
+                                    index=self.totalTimes)
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
         self.spotBidMultiplier = np.random.uniform(self.lowSpotBidLimit, self.highSpotBidLimit, size=self.dailySpotTime)
         self.flexBidMultiplier = np.random.uniform(self.lowFlexBidLimit, self.highFlexBidLimit, size=self.dailySpotTime)
@@ -213,7 +217,7 @@ class FlexAgent:
         return np.hstack((minSpotBidArray, minFlexBidArray, minPriceArray)), \
                np.hstack((maxSpotBidArray, maxFlexBidArray, maxPriceArray))
 
-    def getObservation(self):
+    def getObservation(self, startDay=0):
         """returns the current observation of the environment:
             observation is
                 hourly market clearing prices of 't' Day ahead market,
@@ -222,7 +226,7 @@ class FlexAgent:
                 spot or flex state
         """
         # TODO add reqd flex times?, add weekend vs weekdays?
-        if self.day == 0:
+        if self.day == startDay:
             spotDispatch = np.full(self.dailySpotTime, 0)
             flexDispatch = np.full(self.dailySpotTime, 0)
         else:

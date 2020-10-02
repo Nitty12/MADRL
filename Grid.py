@@ -9,10 +9,11 @@ import util
 
 
 class Grid:
-    def __init__(self,numAgents, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
+    def __init__(self,numAgents, agentsList, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
                  TimePeriod=8760, numNodes=0, numLines=0, numCPU=24):
         """the number of agents in each type to consider as flexibility"""
         self.numAgents = numAgents
+        self.agentsList = agentsList
         self.loadingSeriesHP = loadingSeriesHP
         self.chargingSeriesEV = chargingSeriesEV
         self.genSeriesPV = genSeriesPV
@@ -51,8 +52,8 @@ class Grid:
         self.importGrid()
         self.reset()
 
-    def reset(self):
-        self.day = 0
+    def reset(self, startDay=0):
+        self.day = startDay
         self.dailyTimes = np.arange(self.day * self.dailyFlexTime, (self.day + 1) * self.dailyFlexTime)
 
     def importGrid(self):
@@ -102,6 +103,7 @@ class Grid:
                                     columns=linesAndNodes, index=self.dailyTimes)
         self.congestionStatus = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), False),
                                              columns=linesAndNodes, index=self.dailyTimes)
+        self.data.set_index('Name', inplace=True)
 
     def getLoadsAndGens(self):
         path = os.getcwd()
@@ -136,11 +138,11 @@ class Grid:
             loadingSeriesHH.to_pickle("../inputs/loadingSeriesHH.pkl")
 
         columnNames = columnNamesHH + \
-                      list(self.loadingSeriesHP.columns[self.numAgents:]) + \
-                      list(self.chargingSeriesEV.columns[self.numAgents:]) + \
-                      list(self.loadingSeriesDSM.columns[self.numAgents:]) + \
-                      list(self.genSeriesPV.columns[self.numAgents:]) + \
-                      list(self.genSeriesWind.columns[self.numAgents:])
+                      [name for name in self.loadingSeriesHP if not name.endswith(tuple(self.agentsList))] + \
+                      [name for name in self.chargingSeriesEV if not name.endswith(tuple(self.agentsList))] + \
+                      [name for name in self.loadingSeriesDSM if not name.endswith(tuple(self.agentsList))] + \
+                      [name for name in self.genSeriesPV if not name.endswith(tuple(self.agentsList))] + \
+                      [name for name in self.genSeriesWind if not name.endswith(tuple(self.agentsList))]
 
         """get the list of nodes in which the loads and generations are connected"""
         nodes = []
@@ -173,41 +175,48 @@ class Grid:
         fileList = [os.path.join(root, file) for root, dirs, files in os.walk(datapath) for file in files if
                     file.endswith('Sensitivities_Init_.csv')]
 
+        """Read the first file to get required data useful for consequent processing"""
+        df = pd.read_csv(fileList[0], sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
+                         encoding='unicode_escape')
+        dfList = []
+        if not dfList:
+            """gets the first flexagent name connected to a particular node to get the sensitivity to use for
+                power flow approximation"""
+            for node in self.loadsAndGens:
+                nodeNumber = node[9:]
+                for colName in df:
+                    match = re.search(rf"k{nodeNumber}[n,d,l].*", colName)
+                    if match:
+                        self.nodeSensitivityDict[node] = match.group()
+                        self.nodeSensitivityList.append(match.group())
+                        break
+            """only keep the required sensitivites"""
+            self.HVTrafoNode = self.data.loc[self.data['Name'] == 'Trafo_HSMS', 'Loc_from'].values[0]
+            for agent in self.flexAgents:
+                match = re.search(rf"k{self.HVTrafoNode[9:]}[n,d,l].*", agent.id)
+                if match:
+                    self.nodeSensitivityDict[self.HVTrafoNode] = match.group()
+                    if match.group() not in self.nodeSensitivityList:
+                        self.nodeSensitivityList.append(match.group())
+                    break
+            """check if the node is already present in the dictionary, else add the agent to the sensitivity matrix"""
+            self.agentsWithNewNodeList = []
+            for agent in self.flexAgents:
+                agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agent.id).group(1)
+                if not agentNode in self.nodeSensitivityDict:
+                    self.agentsWithNewNodeList.append(agent.id)
+                    self.nodeSensitivityDict[agentNode] = agent.id
+
         if os.path.isfile("../inputs/SensiDFNew.pkl"):
             print("Reading sensitivity dataframe...")
             self.sensitivity = pd.read_pickle("../inputs/SensiDFNew.pkl")
-
-            """Read the first file to get required data useful for consequent processing"""
-            df = pd.read_csv(fileList[0], sep=';', comment='#', header=0, skiprows=2, error_bad_lines=False,
-                             encoding='unicode_escape')
-            dfList = []
-            if not dfList:
-                """gets the first flexagent name connected to a particular node to get the sensitivity to use for
-                    power flow approximation"""
-                for node in self.loadsAndGens:
-                    nodeNumber = node[9:]
-                    for colName in df:
-                        match = re.search(rf"k{nodeNumber}[n,d,l].*", colName)
-                        if match:
-                            self.nodeSensitivityDict[node] = match.group()
-                            self.nodeSensitivityList.append(match.group())
-                            break
-                """only keep the required sensitivites"""
-                self.HVTrafoNode = self.data.loc[self.data['Name'] == 'Trafo_HSMS', 'Loc_from'].values[0]
-                for agent in self.flexAgents:
-                    match = re.search(rf"k{self.HVTrafoNode[9:]}[n,d,l].*", agent.id)
-                    if match:
-                        self.nodeSensitivityDict[self.HVTrafoNode] = match.group()
-                        if match.group() not in self.nodeSensitivityList:
-                            self.nodeSensitivityList.append(match.group())
-                        break
-                """check if the node is already present in the dictionary, else add the agent to the sensitivity matrix"""
-                self.agentsWithNewNodeList = []
-                for agent in self.flexAgents:
-                    agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", agent.id).group(1)
-                    if not agentNode in self.nodeSensitivityDict:
-                        self.agentsWithNewNodeList.append(agent.id)
-                        self.nodeSensitivityDict[agentNode] = agent.id
+            self.nodeSensitivityDict = {}
+            for colName in self.sensitivity:
+                if colName=='time_step':
+                    continue
+                agentNode = 'Standort_' + re.search("k(\d+)[n,d,l]", colName).group(1)
+                if not agentNode in self.nodeSensitivityDict:
+                    self.nodeSensitivityDict[agentNode] = colName
         else:
             with Pool(processes=self.numCPU) as pool:
                 dfList = pool.map(self.readSensi, fileList)

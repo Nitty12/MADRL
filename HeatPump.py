@@ -5,9 +5,10 @@ from FlexAgent import FlexAgent
 
 class HeatPump(FlexAgent):
     def __init__(self, id, location=[0, 0], maxPower=0, marginalCost=0,
-                 maxStorageLevel=0, maxHeatLoad=0, minStorageLevel=None, scheduledLoad=None):
+                 maxStorageLevel=0, maxHeatLoad=0, minStorageLevel=None, scheduledLoad=None, startDay=0, endDay=365):
 
-        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
+        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost,
+                         startDay=startDay, endDay=endDay)
         self.type = "Heat Pump"
         self.maxStorageLevel = maxStorageLevel  # Storage capacity in MWh
         """
@@ -35,10 +36,10 @@ class HeatPump(FlexAgent):
         self.lowFlexBidLimit = -1
         self.highFlexBidLimit = 1
         self.penalizeTimes = []
-        self.reset()
+        self.reset(startDay)
 
-    def reset(self):
-        super().reset()
+    def reset(self, startDay=0):
+        super().reset(startDay)
         self.storageLevel = self.minStorageLevel
         self.spotChangedEnergy = 0
         self.flexChangedEnergy = 0
@@ -151,7 +152,7 @@ class HeatPump(FlexAgent):
     def spotMarketReward(self, time, qty):
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
         """Here negative of qty is used for reward because generation is negative qty"""
-        self.dailyRewardTable.loc[time, 'reward_spot'] = (self.dailySpotBid.loc[time, 'MCP'] - self.marginalCost) * -qty
+        self.dailyRewardTable.loc[time, 'reward_spot'] = self.dailySpotBid.loc[time, 'MCP'] * -qty
         """penalizing for not having enough energy stored for loading"""
         self.dailyRewardTable.loc[self.penalizeTimes, 'reward_spot'] = self.penaltyViolation
         totalReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()

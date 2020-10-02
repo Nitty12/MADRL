@@ -104,7 +104,7 @@ class MADDPGAgent:
 
 class QAgent:
     def __init__(self, type):
-        self.fc_layer_params = (265,)
+        self.fc_layer_params = (240,)
         self.dropout_layer_params = (0.25,)
         self.learning_rate = 0.09
         self.type = type
@@ -273,9 +273,9 @@ class QMIXMixingNetwork(network.Network):
 class QMIX():
     def __init__(self, nAgents, time_step_spec, train_step_counter, summary_writer=None,
                  debug_summaries=False, summarize_grads_and_vars=False, enable_summaries=True):
-        self.hyper_hidden_dim = 256
-        self.qmix_hidden_dim = 32
-        self.learning_rate = 0.07
+        self.hyper_hidden_dim = 33
+        self.qmix_hidden_dim = 25
+        self.learning_rate = 0.125
         self.nAgents =nAgents
         self.time_step_spec = time_step_spec
         self._epsilon_greedy = 0.1

@@ -15,9 +15,10 @@ class EVehicle(FlexAgent):
     '''
 
     def __init__(self, id, location=[0, 0], maxPower = 0.0036, marginalCost = 0,
-                 maxCapacity = 0, efficiency = 1.0, absenceTimes=None, consumption=None):
+                 maxCapacity = 0, efficiency = 1.0, absenceTimes=None, consumption=None, startDay=0, endDay=365):
 
-        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost)
+        super().__init__(id=id, location=location, maxPower=maxPower, marginalCost=marginalCost,
+                         startDay=startDay, endDay=endDay)
         self.type = "E-vehicle"
         self.maxCapacity = maxCapacity  # capacity in MWh
         self.minCapacity = 0.2*self.maxCapacity
@@ -36,10 +37,10 @@ class EVehicle(FlexAgent):
                     can buy qty to increase the qty from the spot dispatched amount"""
         self.lowFlexBidLimit = -1
         self.highFlexBidLimit = 1
-        self.reset()
+        self.reset(startDay)
 
-    def reset(self):
-        super().reset()
+    def reset(self, startDay=0):
+        super().reset(startDay)
         self.remainingEnergy = self.minCapacity
         self.flexChangedEnergy = 0
         self.spotChangedEnergy = 0
