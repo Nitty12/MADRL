@@ -110,9 +110,6 @@ class LocalFlexMarketEnv(gym.Env):
         self.time += 1
         self.spotState = not self.spotState
 
-        if done[0]:
-            self.reset()
-
         return tuple(obs), tuple(reward), done, info
 
     def reset(self):
@@ -145,7 +142,7 @@ class LocalFlexMarketEnv(gym.Env):
     def _get_done(self, agent):
         """when to reset the environment?
         currently after 1 year"""
-        if self.SpotMarket.day + 1 >= self.endDay:
+        if self.SpotMarket.day + 1 > self.endDay:
             return True
         else:
             return False

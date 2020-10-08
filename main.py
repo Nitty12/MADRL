@@ -33,8 +33,8 @@ if __name__ == '__main__':
             days 330-360: high overload possibility
             days 105-135 or 300-330: low overload possibility"""
     alg = 'MADDPG'
-    startDay = 330
-    endDay = 360
+    startDay = 97
+    endDay = 98
 
     agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, \
     genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit(alg, startDay, endDay, numAgentsEachType=5)
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     time_step = train_env.reset()
 
     """to append and save for analysis"""
-    avgReturns, totalReturns, loss = [], [], []
+    totalReturns, loss = [], []
 
     dataset = replay_buffer.as_dataset(num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
     iterator = iter(dataset)
@@ -134,11 +134,11 @@ if __name__ == '__main__':
             util.saveCheckpoint(nameDict, nameList, checkpointDict, train_step_counter, alg)
 
         if num_iter % eval_interval == 0:
-            avg_return, total_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=endDay-startDay)
-            avgReturns.append(avg_return)
+            time_step = train_env.reset()
+            total_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=2*(endDay-startDay))
             totalReturns.append(total_return)
             """save the results for further evaluation"""
-            util.saveToFile(avgReturns, totalReturns, loss, dso.congestionDetails, alg)
-            avgReturns, totalReturns, loss = [], [], []
+            util.saveToFile(totalReturns, loss, dso.congestionDetails, alg)
+            totalReturns, loss = [], []
     duration = (time.time()-st)/60
     print("---------------------------------------------%.2f minutes-----------------------------------" % duration)

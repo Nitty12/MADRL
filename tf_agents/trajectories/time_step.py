@@ -375,10 +375,14 @@ def get_individual_qmix_time_step(time_step, index, time):
     step_type = time_step.step_type[:, index//3]
   else:
     step_type = time_step.step_type
+  if len(time_step.discount.shape)>1:
+    discount = time_step.discount[:, index//3]
+  else:
+    discount = time_step.discount
   return TimeStep(
     step_type=step_type,
     reward=time_step.reward[:, index//3],
-    discount=time_step.discount,
+    discount=discount,
     observation=observation)
 
 def get_individual_iql_time_step(time_step, index, time):
@@ -388,8 +392,12 @@ def get_individual_iql_time_step(time_step, index, time):
     step_type = time_step.step_type[:, index]
   else:
     step_type = time_step.step_type
+  if len(time_step.discount.shape)>1:
+    discount = time_step.discount[:, index]
+  else:
+    discount = time_step.discount
   return TimeStep(
     step_type=step_type,
     reward=time_step.reward[:, index],
-    discount=time_step.discount,
+    discount=discount,
     observation=observation)

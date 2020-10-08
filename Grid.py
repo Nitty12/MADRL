@@ -46,6 +46,9 @@ class Grid:
         """contains the flexagent name connected to a particular node to get the sensitivity to use for 
         power flow approximation"""
         self.nodeSensitivityDict = {}
+        """For storing the results from powerflow calculation of static agents"""
+        self.staticPowerFlowResults = None
+        self.flowDirection = None
         self.day = 0
         self.dailyFlexTime = 24
         self.dailyTimes = None
@@ -91,11 +94,20 @@ class Grid:
         self.numNodes = len(self.nodes)
         self.numLines = len(self.lines)
 
+    def changeAgentNamesInColumns(self):
+        self.loadingSeriesHP.columns = [re.search('k.*', name).group(0) for name in self.loadingSeriesHP.columns]
+        self.chargingSeriesEV.columns = [re.search('k.*', name).group(0) for name in self.chargingSeriesEV.columns]
+        self.genSeriesPV.columns = [re.search('k.*', name).group(0) for name in self.genSeriesPV.columns]
+        self.genSeriesWind.columns = [re.search('k.*', name).group(0) for name in self.genSeriesWind.columns]
+        self.loadingSeriesDSM.columns = [re.search('k.*', name).group(0) for name in self.loadingSeriesDSM.columns]
+
     def importLoadsAndSensi(self):
         """get the household load data from the CSV"""
         self.getLoadsAndGens()
+        self.changeAgentNamesInColumns()
         """load the sensitivity matrix and concatenate"""
         self.loadSensitivityMatrix()
+        self.staticPowerFlowResults, self.flowDirection = self.importStaticPowerFlowResults()
         """retain only the lines and nodes present in the sensitivity matrix"""
         linesAndNodes = self.sensitivity.index[self.sensitivity['time_step'] == 1].values
         self.data = self.data.loc[self.data['Name'].isin(linesAndNodes),:]
@@ -104,6 +116,24 @@ class Grid:
         self.congestionStatus = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), False),
                                              columns=linesAndNodes, index=self.dailyTimes)
         self.data.set_index('Name', inplace=True)
+
+    def importStaticPowerFlowResults(self):
+        linesAndNodes = self.sensitivity.index[self.sensitivity['time_step'] == 1].values
+        if os.path.isfile("../inputs/Ausgabe_Zweige.pkl"):
+            staticPowerFlowResults = pd.read_pickle("../inputs/Ausgabe_Zweige.pkl")
+            staticPowerFlowResults.set_index('Name', inplace=True)
+            staticPowerFlowResults = staticPowerFlowResults[staticPowerFlowResults.index.isin(linesAndNodes)]
+        else:
+            staticPowerFlowResults = None
+            print('Ausgabe_Zweige pickle file not found!')
+        if os.path.isfile("../inputs/Flussrichtung_Zweige_Grundfall.pkl"):
+            flowDirection = pd.read_pickle("../inputs/Flussrichtung_Zweige_Grundfall.pkl")
+            flowDirection = flowDirection.loc[:, flowDirection.columns.isin(linesAndNodes)]
+            flowDirection = flowDirection[linesAndNodes]
+        else:
+            flowDirection = None
+            print('Flussrichtung_Zweige_Grundfall pickle file not found!')
+        return staticPowerFlowResults, flowDirection
 
     def getLoadsAndGens(self):
         path = os.getcwd()
@@ -283,28 +313,29 @@ class Grid:
         linesAndNodes = self.sensitivity.index[self.sensitivity['time_step'] == 1].values
         self.loading = pd.DataFrame(np.full((self.dailyFlexTime, len(linesAndNodes)), 0.0),
                                     columns=linesAndNodes, index=self.dailyTimes)
+        """reduce the base contribution from flexible agents"""
+        for agent in self.flexAgents:
+            if agent.type=='PV Generation':
+                spotBidDF.loc[:, agent.id] -= self.genSeriesPV.loc[self.dailyTimes, agent.id]
+            elif agent.type=='Wind Generation':
+                spotBidDF.loc[:, agent.id] -= self.genSeriesWind.loc[self.dailyTimes, agent.id]
+            elif agent.type=='E-vehicle':
+                spotBidDF.loc[:, agent.id] -= self.chargingSeriesEV.loc[self.dailyTimes, agent.id]
+            elif agent.type=='Demand Side Management':
+                spotBidDF.loc[:, agent.id] -= self.loadingSeriesDSM.loc[self.dailyTimes, agent.id]
+            elif agent.type=='Heat Pump':
+                spotBidDF.loc[:, agent.id] -= self.loadingSeriesHP.loc[self.dailyTimes, agent.id]
         for time in self.dailyTimes:
-            totalLoad = 0
-            totalGen = 0
-            """add the contribution from households and other static agents to the lines"""
-            sensitivity = self.getCurrentSensitivity(time).to_numpy()
-            qty = self.loadsAndGens.loc[time, :].to_numpy().reshape((1,-1))
-            self.loading.loc[time, :] = qty @ sensitivity.T
-            if np.sum(qty) >= 0:
-                totalLoad += np.sum(qty)
-            else:
-                totalGen += np.sum(qty)
+            """add the base contribution from all agents to the lines"""
+            staticPowerFlowResults = self.staticPowerFlowResults.loc[self.staticPowerFlowResults['Time_step'] == time, 'Loading_A']
+            staticPowerFlowResults = staticPowerFlowResults.reindex(linesAndNodes)
+            direction = self.flowDirection.loc[time, :]
+            self.loading.loc[time, :] = staticPowerFlowResults * direction
+
             """add the flex agent contribution to the lines"""
             qty = spotBidDF.loc[time, :].to_numpy().reshape((1,-1))
             sensitivity = self.getCurrentSensitivity(time, self.agentNodes).to_numpy()
             self.loading.loc[time, :] += (qty @ sensitivity.T).ravel()
-            if np.sum(qty) >= 0:
-                totalLoad += np.sum(qty)
-            else:
-                totalGen += np.sum(qty)
-            """include remaining power flow from HV transformer"""
-            sensitivity = self.getCurrentSensitivity(time, self.HVTrafoNode)
-            self.loading.loc[time, :] += sensitivity.values * (totalLoad + totalGen)
 
     def getStatus(self):
         return self.congestionStatus

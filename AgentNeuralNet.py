@@ -344,7 +344,7 @@ class QMIX():
         tf.debugging.check_numerics(loss_info.loss, 'Loss is inf or nan')
         grads = tape.gradient(loss_info.loss, variables_to_train)
         grads_and_vars = list(zip(grads, variables_to_train))
-        training_lib.apply_gradients(
+        self.train_step_counter = training_lib.apply_gradients(
             self._optimizer, grads_and_vars, global_step=self.train_step_counter)
         self._update_target()
         return loss_info

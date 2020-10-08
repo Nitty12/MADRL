@@ -24,7 +24,7 @@ import random
 import pickle
 
 
-def agentsInit(alg, startDay=0, endDay=365, numAgentsEachType=5):
+def agentsInit(alg, startDay=0, endDay=365, requiredNodes = None, numAgentsEachType=None):
     '''generation is -ve qty and load is +ve qty'''
     path = os.getcwd()
     if os.path.isfile("../inputs/RA_RD_Import_.pkl"):
@@ -61,7 +61,14 @@ def agentsInit(alg, startDay=0, endDay=365, numAgentsEachType=5):
     startHour = startDay*24
     endHour = endDay*24-1
     agentsDict = {}
-    names = genSeriesPV.columns.to_series().sample(n=numAgentsEachType).values
+
+    requiredNodes = ['Standort_33', 'Standort_0', 'Standort_74', 'Standort_109', 'Standort_18', 'Standort_113',
+                     'Standort_79', 'Standort_94', 'Standort_25', 'Standort_105', 'Standort_69']
+
+    if requiredNodes:
+        names = getAgentsFromNodes(genSeriesPV.columns, requiredNodes)[:5]
+    else:
+        names = genSeriesPV.columns.to_series().sample(n=numAgentsEachType).values
     for name in names:
         name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
@@ -69,7 +76,10 @@ def agentsInit(alg, startDay=0, endDay=365, numAgentsEachType=5):
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                voltageLevel=voltage_level, genSeries=genSeriesPV.loc[startHour:endHour, colName],
                                startDay=startDay, endDay=endDay)
-    names = genSeriesWind.columns.to_series().sample(n=numAgentsEachType).values
+    if requiredNodes:
+        names = getAgentsFromNodes(genSeriesWind.columns, requiredNodes)[:5]
+    else:
+        names = genSeriesWind.columns.to_series().sample(n=numAgentsEachType).values
     for name in names:
         name = re.search('k.*', name).group(0)
         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
@@ -77,44 +87,64 @@ def agentsInit(alg, startDay=0, endDay=365, numAgentsEachType=5):
         agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                voltageLevel=voltage_level, genSeries=genSeriesWind.loc[startHour:endHour, colName],
                                startDay=startDay, endDay=endDay)
-    names = random.sample(homeStorageList, numAgentsEachType)
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                                      voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost = 30,
-                               startDay=startDay, endDay=endDay)
-    names = chargingSeriesEV.columns.to_series().sample(n=numAgentsEachType).values
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
-        agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
-                                    absenceTimes=absenceSeriesEV.loc[startDay:endDay, colName],
-                                    consumption=consumptionSeriesEV.loc[startDay:endDay, colName], marginalCost = 30,
-                               startDay=startDay, endDay=endDay)
-    names = loadingSeriesHP.columns.to_series().sample(n=numAgentsEachType).values
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        #TODO check if the latest RA_RD_Import_ file contains maxpower
-        colName = loadingSeriesHP.filter(like=name).columns.values[0]
-        agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
-                                    maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
-                                    scheduledLoad=loadingSeriesHP.loc[startHour:endHour, colName], marginalCost = 30,
-                               startDay=startDay, endDay=endDay)
-    names = loadingSeriesDSM.columns.to_series().sample(n=numAgentsEachType).values
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        #TODO check if the latest RA_RD_Import_ file contains maxpower
-        colName = loadingSeriesDSM.filter(like=name).columns.values[0]
-        agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
-                               scheduledLoad=loadingSeriesDSM.loc[startHour:endHour, colName], marginalCost = 30,
-                               startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(homeStorageList, requiredNodes)
+    # else:
+    #     names = random.sample(homeStorageList, numAgentsEachType)
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                                   voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost = 30,
+    #                            startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(chargingSeriesEV.columns, requiredNodes)
+    # else:
+    #     names = chargingSeriesEV.columns.to_series().sample(n=numAgentsEachType).values
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
+    #     agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
+    #                                 absenceTimes=absenceSeriesEV.loc[startDay:endDay, colName],
+    #                                 consumption=consumptionSeriesEV.loc[startDay:endDay, colName], marginalCost = 30,
+    #                            startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(loadingSeriesHP.columns, requiredNodes)
+    # else:
+    #     names = loadingSeriesHP.columns.to_series().sample(n=numAgentsEachType).values
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     #TODO check if the latest RA_RD_Import_ file contains maxpower
+    #     colName = loadingSeriesHP.filter(like=name).columns.values[0]
+    #     agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
+    #                                 maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
+    #                                 scheduledLoad=loadingSeriesHP.loc[startHour:endHour, colName], marginalCost = 30,
+    #                            startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(loadingSeriesDSM.columns, requiredNodes)
+    # else:
+    #     names = loadingSeriesDSM.columns.to_series().sample(n=numAgentsEachType).values
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     #TODO check if the latest RA_RD_Import_ file contains maxpower
+    #     colName = loadingSeriesDSM.filter(like=name).columns.values[0]
+    #     agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
+    #                            scheduledLoad=loadingSeriesDSM.loc[startHour:endHour, colName], marginalCost = 30,
+    #                            startDay=startDay, endDay=endDay)
 
     nameDict, networkDict = RLNetworkInit(agentsDict, alg)
 
     return agentsDict, nameDict, networkDict, numAgentsEachType, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, \
            loadingSeriesDSM
 
+def getAgentsFromNodes(names, requiredNodes):
+    agentNames = []
+    for node in requiredNodes:
+        for name in names:
+            match = re.search(rf'SO-·{node}.*', name)
+            if match:
+                agentNames.append(re.search('k.*', match.group(0)).group(0))
+    return agentNames
 
 def RLNetworkInit(agentsDict, alg):
     """parameter sharing of RL Network for same types of agents in same node"""
@@ -335,8 +365,7 @@ def compute_avg_return(environment, policySteps, alg, num_steps=10):
             total_return = next_time_step.reward
         else:
             total_return += next_time_step.reward
-    avg_return = total_return / num_steps
-    return avg_return.numpy()[0], total_return.numpy()[0]
+    return total_return.numpy()[0]
 
 
 def collect_step(environment, policySteps, buffer, alg):
@@ -623,12 +652,9 @@ def saveCheckpoint(nameDict, nameList, checkpointDict, train_step_counter, alg):
     """save the Replay Buffer"""
     checkpointDict['ReplayBuffer'].save(train_step_counter)
 
-def saveToFile(avgReturns, totalReturns, loss, congestionDetails, alg):
+def saveToFile(totalReturns, loss, congestionDetails, alg):
     if not os.path.exists("../results/" + alg):
         os.makedirs("../results/" + alg)
-    filename = "../results/" + alg + "/avgReturns.pkl"
-    with open(filename, "ab") as f:
-        pickle.dump(avgReturns, f)
     filename = "../results/" + alg + "/totalReturns.pkl"
     with open(filename, "ab") as f:
         pickle.dump(totalReturns, f)
