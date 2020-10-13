@@ -33,11 +33,11 @@ if __name__ == '__main__':
             days 330-360: high overload possibility
             days 105-135 or 300-330: low overload possibility"""
     alg = 'MADDPG'
-    startDay = 97
-    endDay = 98
+    startDay = 330
+    endDay = 360
 
     agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, \
-    genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit(alg, startDay, endDay, numAgentsEachType=5)
+    genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit(alg, startDay, endDay, numAgentsEachType=3)
     nameList = [agent.id for agent in agentsDict.values()]
     typeList = [agent.type for agent in agentsDict.values()]
     grid = Grid(numAgents, nameList, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     """Training parameters"""
     num_iterations = 100000
     collect_steps_per_iteration = 2
-    eval_interval = 250
+    eval_interval = 1
     checkpoint_interval = 500
     batch_size = 8
 
@@ -115,6 +115,11 @@ if __name__ == '__main__':
         for _ in range(collect_steps_per_iteration):
             util.collect_step(train_env, collect_policySteps, replay_buffer, alg)
 
+        """so that the reset step with 0 rewards is not added to the replay buffer"""
+        if eval_interval>=(endDay-startDay):
+            if num_iter%(endDay-startDay)==0:
+                train_env.reset()
+
         """Sample a batch of data from the buffer and update the agent's network."""
         experience, unused_info = next(iterator)
         train_step_counter.assign_add(1)
@@ -134,11 +139,12 @@ if __name__ == '__main__':
             util.saveCheckpoint(nameDict, nameList, checkpointDict, train_step_counter, alg)
 
         if num_iter % eval_interval == 0:
-            time_step = train_env.reset()
-            total_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=2*(endDay-startDay))
+            train_env.reset()
+            total_return = util.compute_avg_return(train_env, eval_policySteps, alg, num_steps=endDay-startDay)
             totalReturns.append(total_return)
             """save the results for further evaluation"""
             util.saveToFile(totalReturns, loss, dso.congestionDetails, alg)
             totalReturns, loss = [], []
+            train_env.reset()
     duration = (time.time()-st)/60
     print("---------------------------------------------%.2f minutes-----------------------------------" % duration)

@@ -160,8 +160,8 @@ class EVehicle(FlexAgent):
     def flexMarketReward(self, time, qty, price, penalizeTimes, startingPenalty):
         if len(time) > 0:
             qty = [q if not self.dailyAbsenceTimes[i] else 0 for i, q in enumerate(qty)]
-            """Price of electricity bought: Here negative of qty is used for reward because generation is negative qty"""
-            self.dailyRewardTable.loc[time, 'reward_flex'] = price * -np.array(qty)
+            """Either way, if dispatched, the DSO pays the agents"""
+            self.dailyRewardTable.loc[time, 'reward_flex'] = price * np.abs(qty)
             """Penalizing agent if not fully charged before departure"""
             self.dailyRewardTable.loc[time[0], 'reward_flex'] += startingPenalty
             """Penalize to not offer flexibility during absent times"""

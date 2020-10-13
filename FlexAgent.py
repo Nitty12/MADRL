@@ -54,7 +54,7 @@ class FlexAgent:
         self.highFlexBidLimit = 0
         self.lowPriceLimit = 1
         self.highPriceLimit = 2
-        self.penaltyViolation = -100
+        self.penaltyViolation = -10
         self.spotState = None
         """current day MCP"""
         self.MCP = []
@@ -97,7 +97,7 @@ class FlexAgent:
 
     def makeSpotBid(self):
         self.spotBidMultiplier = self.getSpotBidMultiplier()
-        # self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes), 'qty_bid'] *= self.spotBidMultiplier
+        self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes), 'qty_bid'] *= self.spotBidMultiplier
         self.dailySpotBid = self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)]
 
     def boundSpotBidMultiplier(self, low, high):
@@ -131,8 +131,8 @@ class FlexAgent:
                 self.maxPower - spotDispatchedQty
 
         self.flexBidMultiplier, self.flexBidPriceMultiplier = self.getFlexBidMultiplier()
-        # self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes), 'qty_bid'] *= self.flexBidMultiplier
-        # self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes), 'price'] *= self.flexBidPriceMultiplier
+        self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes), 'qty_bid'] *= self.flexBidMultiplier
+        self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes), 'price'] *= self.flexBidPriceMultiplier
 
         self.dailyFlexBid = self.flexBid.loc[self.flexBid['time'].isin(self.dailyTimes)]
         self.dailyFlexBid.loc[~self.dailyFlexBid['time'].isin(reqdFlexTimes), ['qty_bid', 'price']] = 0
@@ -177,7 +177,8 @@ class FlexAgent:
         pass
 
     def updateReward(self, reward):
-        self.rewardCount += reward
+        # self.rewardCount += reward
+        pass
 
     def getTotalReward(self):
         """cumulative reward for the agent during the episode"""

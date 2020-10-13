@@ -39,7 +39,7 @@ class BatStorage(FlexAgent):
 
     def reset(self, startDay=0):
         super().reset(startDay)
-        self.remainingEnergy = self.minCapacity
+        self.remainingEnergy = self.maxCapacity/2
         self.SOC = 1.0
         self.flexChangedEnergy = 0
         self.spotChangedEnergy = 0
@@ -146,7 +146,7 @@ class BatStorage(FlexAgent):
         self.dailyRewardTable = self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes)]
         # Here negative of qty is used for reward because generation is negative qty
         self.dailyRewardTable.loc[time, 'reward_spot'] = self.dailySpotBid.loc[time, 'MCP'] * -qty
-        self.dailyRewardTable.loc[self.penalizeTimes, 'reward_spot'] = self.penaltyViolation
+        self.dailyRewardTable.loc[self.penalizeTimes, 'reward_spot'] += self.penaltyViolation
         totalReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_spot'] \
             = self.dailyRewardTable.loc[:, 'reward_spot']
@@ -218,8 +218,8 @@ class BatStorage(FlexAgent):
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice)
 
     def flexMarketReward(self, time, qty, price):
-        # Here negative of qty is used for reward because generation is negative qty
-        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
+        # Either way, if dispatched, the DSO pays the agents
+        self.dailyRewardTable.loc[time, 'reward_flex'] = price * qty.abs()
         self.dailyRewardTable.loc[self.penalizeTimes, 'reward_flex'] += self.penaltyViolation
         totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \

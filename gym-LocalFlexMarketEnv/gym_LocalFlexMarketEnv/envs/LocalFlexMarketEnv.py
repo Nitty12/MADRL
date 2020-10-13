@@ -93,12 +93,17 @@ class LocalFlexMarketEnv(gym.Env):
         done = []
         info = {'x': []}
         # set action for each agent
+        filename = "../results/" + self.alg + "/Actions.pkl"
+        with open(filename, "ab") as f:
+            pickle.dump(action, f)
         for i, agent in enumerate(self.agents):
             self._set_action(action[i], agent, self.action_space[i], self.spotState)
-        if self.spotState:
-            self.spotStep()
-        else:
-            self.flexStep()
+        # if self.spotState:
+        #     self.spotStep()
+        # else:
+        #     self.flexStep()
+        self.spotStep()
+        self.flexStep()
 
         # record observation for each agent
         for agent in self.agents:
@@ -150,24 +155,30 @@ class LocalFlexMarketEnv(gym.Env):
     # get reward for a particular agent
     def _get_reward(self, agent):
         spotReward, flexReward = agent.getReward()
-        if self.spotState:
-            return spotReward
-        else:
-            return flexReward
+        # if self.spotState:
+        #     return spotReward
+        # else:
+        #     return flexReward
+        return spotReward + flexReward
 
 
     # set env action for a particular agent
     def _set_action(self, action, agent, action_space, spotState):
         """ action is the hourly strategic bid multiplier(sbm) and price multiplier (spm) for the agent
         """
-        if spotState:
-            """action is a rank 2 tensor [[]] with just one row, so we take action[0][indexing]"""
-            agent.spotBidMultiplier = action[0][:self.SpotMarket.dailySpotTime]
-            # we dont use the price multiplier in spot market
-
-        else:
-            agent.flexBidMultiplier = action[0][self.SpotMarket.dailySpotTime:2*self.SpotMarket.dailySpotTime]
-            agent.flexBidPriceMultiplier = action[0][2*self.SpotMarket.dailySpotTime:]
+        # if spotState:
+        #     """action is a rank 2 tensor [[]] with just one row, so we take action[0][indexing]"""
+        #     agent.spotBidMultiplier = action[0][:self.SpotMarket.dailySpotTime]
+        #     # we dont use the price multiplier in spot market
+        #
+        # else:
+        #     agent.flexBidMultiplier = action[0][self.SpotMarket.dailySpotTime:2*self.SpotMarket.dailySpotTime]
+        #     agent.flexBidPriceMultiplier = action[0][2*self.SpotMarket.dailySpotTime:]
+        """action is a rank 2 tensor [[]] with just one row, so we take action[0][indexing]"""
+        agent.spotBidMultiplier = action[0][:self.SpotMarket.dailySpotTime]
+        # we dont use the price multiplier in spot market
+        agent.flexBidMultiplier = action[0][self.SpotMarket.dailySpotTime:2*self.SpotMarket.dailySpotTime]
+        agent.flexBidPriceMultiplier = action[0][2*self.SpotMarket.dailySpotTime:]
 
     def spotStep(self):
         lastTime = time.time()

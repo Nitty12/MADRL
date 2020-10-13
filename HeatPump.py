@@ -30,6 +30,8 @@ class HeatPump(FlexAgent):
         self.energyTable = None
         self.spotChangedEnergy = 0
         self.flexChangedEnergy = 0
+        """As the reward values are small because of low power"""
+        self.penaltyViolation = -1
 
         """in flex , can "sell" qty ie, to reduce the qty from the spot dispatched amount 
                     can buy qty to increase the qty from the spot dispatched amount"""
@@ -40,7 +42,7 @@ class HeatPump(FlexAgent):
 
     def reset(self, startDay=0):
         super().reset(startDay)
-        self.storageLevel = self.minStorageLevel
+        self.storageLevel = self.maxStorageLevel/2
         self.spotChangedEnergy = 0
         self.flexChangedEnergy = 0
 
@@ -138,6 +140,7 @@ class HeatPump(FlexAgent):
         self.boundSpotBidMultiplier(low=self.lowSpotBidLimit, high=self.highSpotBidLimit)
         self.energyTable.loc[:, 'time'] = np.concatenate([self.dailyTimes, np.array([self.dailyTimes[-1]+1])])
         super().makeSpotBid()
+        self.penalizeTimes = []
         self.makeBid(self.dailySpotBid, status)
         self.spotBid.loc[self.spotBid['time'].isin(self.dailyTimes)] = self.dailySpotBid
 
@@ -154,7 +157,7 @@ class HeatPump(FlexAgent):
         """Here negative of qty is used for reward because generation is negative qty"""
         self.dailyRewardTable.loc[time, 'reward_spot'] = self.dailySpotBid.loc[time, 'MCP'] * -qty
         """penalizing for not having enough energy stored for loading"""
-        self.dailyRewardTable.loc[self.penalizeTimes, 'reward_spot'] = self.penaltyViolation
+        self.dailyRewardTable.loc[self.penalizeTimes, 'reward_spot'] += self.penaltyViolation
         totalReward = self.dailyRewardTable.loc[:, 'reward_spot'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_spot'] = \
             self.dailyRewardTable.loc[:, 'reward_spot']
@@ -231,8 +234,8 @@ class HeatPump(FlexAgent):
 
     def flexMarketReward(self, time, qty, price):
         self.dailyRewardTable.loc[self.penalizeTimes, 'reward_flex'] = self.penaltyViolation
-        # Here negative of qty is used for reward because generation is negative qty
-        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
+        # Either way, if dispatched, the DSO pays the agents
+        self.dailyRewardTable.loc[time, 'reward_flex'] += price * qty.abs()
         totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
             = self.dailyRewardTable.loc[:, 'reward_flex']
@@ -251,7 +254,6 @@ class HeatPump(FlexAgent):
             if status == 'before_spot':
                 """only penalize spot bid while making bid bcoz for flex bid we dont know which of the bids gets 
                     accepted, so penalize after dispatch"""
-                self.penalizeTimes = []
                 if not loaded:
                     self.penalizeTimes.append(t)
 

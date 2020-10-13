@@ -20,19 +20,13 @@ class DSO:
         self.numTopTwoAndHalfPercent = round(len(self.grid.data) * .025)
         self.congestionDetails = pd.DataFrame(data={'time': self.totalTimes,
                                                     'congested': np.full(len(self.totalTimes), 0),
-                                                    'previous congested': np.full(len(self.totalTimes), 0),
                                                     'top 5 percent loading': np.full(len(self.totalTimes), 0.0),
-                                                    'previous top 5 percent loading': np.full(len(self.totalTimes), 0.0),
-                                                    'top 2.5 percent loading': np.full(len(self.totalTimes), 0.0),
-                                                    'previous top 2.5 percent loading': np.full(len(self.totalTimes), 0.0)},
+                                                    'top 2.5 percent loading': np.full(len(self.totalTimes), 0.0)},
                                          index=self.totalTimes)
 
     def reset(self):
         self.flexMarket.reset(self.start)
         self.grid.reset(self.start)
-        self.congestionDetails.loc[:, 'previous congested'] = self.congestionDetails.loc[:, 'congested']
-        self.congestionDetails.loc[:, 'previous top 5 percent loading'] = self.congestionDetails.loc[:, 'top 5 percent loading']
-        self.congestionDetails.loc[:, 'previous top 2.5 percent loading'] = self.congestionDetails.loc[:, 'top 2.5 percent loading']
         self.congestionDetails.loc[:, 'congested'] = 0
         self.congestionDetails.loc[:, 'top 5 percent loading'] = 0.0
         self.congestionDetails.loc[:, 'top 2.5 percent loading'] = 0.0
@@ -105,8 +99,8 @@ class DSO:
                                  self.grid.data.loc[:, 'I_rated_A']).sort_values(ascending=False)[:self.numTopTwoAndHalfPercent].mean()
         self.congestionDetails.loc[time, 'top 5 percent loading'] = loadingTopFivePercent
         self.congestionDetails.loc[time, 'top 2.5 percent loading'] = loadingTopTwoAndHalfPercent
-        reqdFlexI_A = self.grid.data.loc[congested, 'I_rated_A'].values - \
-                      np.abs(self.grid.loading.loc[time, congested].values)
+        reqdFlexI_A = np.abs(self.grid.loading.loc[time, congested].values) - self.grid.data.loc[congested, 'I_rated_A'].values
+
         """sorting the required flexibility in reverse order to solve the biggest one first"""
         sortedReqdFlexI_A = reqdFlexI_A[np.abs(reqdFlexI_A).argsort()][::-1]
         congested = congested[np.abs(reqdFlexI_A).argsort()][::-1]
@@ -129,14 +123,15 @@ class DSO:
             """determine the impact of flexbid on the lines"""
             impact.loc[i, :] = bids.loc[agentID, 'qty_bid'] * sensitivity
             impact.rename(index={i: agentID}, inplace=True)
-            return sensitivityFlexAgents, bids, impact
+        bids.loc[:, 'price'] *= bids.loc[:, 'qty_bid']
+        return sensitivityFlexAgents, bids, impact
 
     def chooseMultipleFlexOptions(self, sortedReqdFlexI_A, impact, congestedLine, i):
         """No single agent can reduce congestion, select multiple agents"""
         acceptedAgentID = None
         if sortedReqdFlexI_A[i] > 0:
             """selecting agents having atleast 0.5A positive effect to prevent very small impacts to be selected"""
-            positiveImpacts = impact.loc[impact[congestedLine] > 0.5, congestedLine]
+            positiveImpacts = impact.loc[impact[congestedLine] > 0, congestedLine]
             if not len(positiveImpacts) == 0:
                 if positiveImpacts.sum() < sortedReqdFlexI_A[i]:
                     """select all the positive impacting agents"""
@@ -152,7 +147,7 @@ class DSO:
                     indexMask = (positiveImpacts.sort_values(ascending=False).cumsum() <= minI_A).values
                     acceptedAgentID = positiveImpacts.index[indexMask].values
         else:
-            positiveImpacts = impact.loc[impact[congestedLine] < -0.5, congestedLine]
+            positiveImpacts = impact.loc[impact[congestedLine] < 0, congestedLine]
             if not len(positiveImpacts) == 0:
                 if positiveImpacts.sum() > sortedReqdFlexI_A[i]:
                     """Sum of all positively impacting flexbids is even not sufficient, so select all these bids"""

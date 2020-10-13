@@ -111,9 +111,8 @@ class DSM(FlexAgent):
         self.flexMarketReward(flexDispatchedTimes, flexDispatchedQty, flexDispatchedPrice)
 
     def flexMarketReward(self, time, qty, price):
-        # Here negative of qty is used for reward because generation is negative qty
-        # TODO assumption that DSM has to pay to increase load correct?
-        self.dailyRewardTable.loc[time, 'reward_flex'] = price * -qty
+        # Either way, if dispatched, the DSO pays the agents
+        self.dailyRewardTable.loc[time, 'reward_flex'] = price * qty.abs()
         totalReward = self.dailyRewardTable.loc[:, 'reward_flex'].sum()
         self.rewardTable.loc[self.rewardTable['time'].isin(self.dailyTimes), 'reward_flex'] \
             = self.dailyRewardTable.loc[:, 'reward_flex']
