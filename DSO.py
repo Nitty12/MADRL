@@ -21,7 +21,8 @@ class DSO:
         self.congestionDetails = pd.DataFrame(data={'time': self.totalTimes,
                                                     'congested': np.full(len(self.totalTimes), 0),
                                                     'top 5 percent loading': np.full(len(self.totalTimes), 0.0),
-                                                    'top 2.5 percent loading': np.full(len(self.totalTimes), 0.0)},
+                                                    'top 2.5 percent loading': np.full(len(self.totalTimes), 0.0),
+                                                    'volume': np.full(len(self.totalTimes), 0.0)},
                                          index=self.totalTimes)
 
     def reset(self):
@@ -100,7 +101,8 @@ class DSO:
         self.congestionDetails.loc[time, 'top 5 percent loading'] = loadingTopFivePercent
         self.congestionDetails.loc[time, 'top 2.5 percent loading'] = loadingTopTwoAndHalfPercent
         reqdFlexI_A = np.abs(self.grid.loading.loc[time, congested].values) - self.grid.data.loc[congested, 'I_rated_A'].values
-
+        congestionVolume = np.abs(reqdFlexI_A).sum()
+        self.congestionDetails.loc[time, 'volume'] = congestionVolume
         """sorting the required flexibility in reverse order to solve the biggest one first"""
         sortedReqdFlexI_A = reqdFlexI_A[np.abs(reqdFlexI_A).argsort()][::-1]
         congested = congested[np.abs(reqdFlexI_A).argsort()][::-1]

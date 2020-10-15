@@ -62,70 +62,47 @@ def agentsInit(alg, startDay=0, endDay=365, requiredNodes = None, numAgentsEachT
     endHour = endDay*24-1
     agentsDict = {}
 
-    """Days 330-360"""
-    lines = ['L_29R_39_boost',
-             'Knoten_79_Stich_boost_1',
-             'Knoten_79_Stich_boost',
-             'Knoten_79_Stich',
-             'Trafo_19',
-             'L_Knoten_25_Stichabgang_R_Knoten_18_Stichabgang',
-             'L_Knoten_94_Stichabgang_R_Knoten_79',
-             'L_Knoten_69_Stichabgang_R_Knoten_74',
-             'L_74R_39',
-             'L_Knoten_94_Stichabgang_R_Knoten_79_boost_boost',
-             'L_0R_39_boost',
-             'L_Knoten_105_Stichabgang_R_Knoten_101_Stichabgang_boost',
-             'L_0R_36_boost_1',
-             'Trafo_14',
-             'L_Knoten_25_Stichabgang_R_Knoten_18_Stichabgang_boost',
-             'Trafo_60',
-             'L_Knoten_94_Stichabgang_R_Knoten_79_boost',
-             'L_Knoten_69_Stichabgang_R_Knoten_74_boost_1_boost',
-             'L_Knoten_69_Stichabgang_R_Knoten_74_boost',
-             'L_0R_36_boost',
-             'L_33R_39_boost_1',
-             'L_33R_39',
-             'L_74R_39_boost_boost',
-             'L_33R_39_boost_2',
-             'L_74R_39_boost_boost_1',
-             'Trafo_62',
-             'L_Knoten_105_Stichabgang_R_Knoten_101_Stichabgang',
-             'L_0R_39_boost_1',
-             'L_33R_39_boost',
-             'L_Knoten_69_Stichabgang_R_Knoten_74_boost_1',
-             'L_0R_39_boost_1_boost',
-             'L_29R_39',
-             'L_0R_36',
-             'L_0R_39',
-             'L_29R_39_boost_1',
-             'L_74R_39_boost',
-             'L_29R_39_boost_2']
-    requiredNodes = ['Standort_109',
-                     'Standort_74',
-                     'Standort_35',
-                     'Standort_79',
-                     'Standort_36',
-                     'Standort_24',
-                     'Standort_69',
-                     'Standort_14',
-                     'Standort_62',
-                     'Standort_101',
-                     'Standort_117',
-                     'Standort_33',
-                     'Standort_70',
-                     'Standort_72',
-                     'Standort_25',
-                     'Standort_126',
-                     'Standort_29',
-                     'Standort_57',
-                     'Standort_60',
-                     'Standort_56',
-                     'Standort_113',
-                     'Standort_18',
-                     'Standort_94',
-                     'Standort_49',
-                     'Standort_19',
-                     'Standort_122']
+    # """day 362"""
+    # lines = ['L_Knoten_105_Stichabgang_R_Knoten_101_Stichabgang',
+    #          'Knoten_79_Stich_boost_1',
+    #          'L_Knoten_69_Stichabgang_R_Knoten_74_boost',
+    #          'Knoten_79_Stich',
+    #          'L_Knoten_94_Stichabgang_R_Knoten_79_boost_boost',
+    #          'L_29R_39',
+    #          'L_74R_39',
+    #          'L_0R_36_boost_1',
+    #          'L_0R_36',
+    #          'L_Knoten_94_Stichabgang_R_Knoten_79_boost',
+    #          'L_29R_39_boost_2',
+    #          'L_33R_39_boost',
+    #          'L_0R_36_boost',
+    #          'L_29R_39_boost',
+    #          'L_74R_39_boost_boost',
+    #          'Knoten_79_Stich_boost',
+    #          'L_Knoten_69_Stichabgang_R_Knoten_74_boost_1_boost',
+    #          'L_Knoten_105_Stichabgang_R_Knoten_101_Stichabgang_boost',
+    #          'L_Knoten_94_Stichabgang_R_Knoten_79',
+    #          'L_33R_39',
+    #          'L_33R_39_boost_1',
+    #          'L_0R_39',
+    #          'L_0R_39_boost',
+    #          'L_33R_39_boost_2',
+    #          'L_Knoten_69_Stichabgang_R_Knoten_74',
+    #          'L_74R_39_boost',
+    #          'L_0R_39_boost_1_boost',
+    #          'L_29R_39_boost_1',
+    #          'L_Knoten_69_Stichabgang_R_Knoten_74_boost_1',
+    #          'L_0R_39_boost_1',
+    #          'L_74R_39_boost_boost_1']
+    # requiredNodes = ['Standort_74',
+    #                  'Standort_57',
+    #                  'Standort_79',
+    #                  'Standort_29',
+    #                  'Standort_94',
+    #                  'Standort_113',
+    #                  'Standort_33',
+    #                  'Standort_69',
+    #                  'Standort_109']
 
     if requiredNodes:
         names = getAgentsFromNodes(list(genSeriesPV.columns), requiredNodes)[:numAgentsEachType]
@@ -138,64 +115,65 @@ def agentsInit(alg, startDay=0, endDay=365, requiredNodes = None, numAgentsEachT
         agentsDict[name] = PVG(id=name, location=loc, minPower=min_power, maxPower=max_power,
                                voltageLevel=voltage_level, genSeries=genSeriesPV.loc[startHour:endHour, colName],
                                startDay=startDay, endDay=endDay)
-    if requiredNodes:
-        names = getAgentsFromNodes(list(genSeriesWind.columns), requiredNodes)[:numAgentsEachType]
-    else:
-        names = genSeriesWind.columns.to_series().sample(n=numAgentsEachType).values
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        colName = genSeriesWind.filter(like=name).columns.values[0]
-        agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                               voltageLevel=voltage_level, genSeries=genSeriesWind.loc[startHour:endHour, colName],
-                               startDay=startDay, endDay=endDay)
-    if requiredNodes:
-        names = getAgentsFromNodes(homeStorageList, requiredNodes)[:numAgentsEachType]
-    else:
-        names = random.sample(homeStorageList, numAgentsEachType)
-    if not names:
-        names = []
-        for n in requiredNodes[:numAgentsEachType]:
-            names.append('k' + n[9:] + 'd_BatteryStorage')
-    for name in names:
-            name = re.search('k.*', name).group(0)
-            loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-            agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
-                                          voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost = 30,
-                                   startDay=startDay, endDay=endDay)
-    if requiredNodes:
-        names = getAgentsFromNodes(list(chargingSeriesEV.columns), requiredNodes)[:numAgentsEachType]
-    else:
-        names = chargingSeriesEV.columns.to_series().sample(n=numAgentsEachType).values
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
-        agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
-                                    absenceTimes=absenceSeriesEV.loc[startDay:endDay, colName],
-                                    consumption=consumptionSeriesEV.loc[startDay:endDay, colName], marginalCost = 30,
-                               startDay=startDay, endDay=endDay)
-    if requiredNodes:
-        names = getAgentsFromNodes(list(loadingSeriesHP.columns), requiredNodes)[:numAgentsEachType]
-    else:
-        names = loadingSeriesHP.columns.to_series().sample(n=numAgentsEachType).values
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
-        colName = loadingSeriesHP.filter(like=name).columns.values[0]
-        agentsDict[name] = HeatPump(id=name, maxPower=max_power, maxStorageLevel=10*max_power,
-                                    scheduledLoad=loadingSeriesHP.loc[startHour:endHour, colName], marginalCost = 30,
-                               startDay=startDay, endDay=endDay)
-    if requiredNodes:
-        names = getAgentsFromNodes(list(loadingSeriesDSM.columns), requiredNodes)[:numAgentsEachType]
-    else:
-        names = loadingSeriesDSM.columns.to_series().sample(n=numAgentsEachType).values
-    for name in names:
-        name = re.search('k.*', name).group(0)
-        #TODO check if the latest RA_RD_Import_ file contains maxpower
-        colName = loadingSeriesDSM.filter(like=name).columns.values[0]
-        agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
-                               scheduledLoad=loadingSeriesDSM.loc[startHour:endHour, colName], marginalCost = 30,
-                               startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(list(genSeriesWind.columns), requiredNodes)[:numAgentsEachType]
+    # else:
+    #     names = genSeriesWind.columns.to_series().sample(n=numAgentsEachType).values
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     colName = genSeriesWind.filter(like=name).columns.values[0]
+    #     agentsDict[name] = WG(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                            voltageLevel=voltage_level, genSeries=genSeriesWind.loc[startHour:endHour, colName],
+    #                            startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(homeStorageList, requiredNodes)[:numAgentsEachType]
+    # else:
+    #     names = random.sample(homeStorageList, numAgentsEachType)
+    # if not names:
+    #     names = []
+    #     for n in requiredNodes[:numAgentsEachType]:
+    #         names.append('k' + n[9:] + 'd_BatteryStorage')
+    # for name in names:
+    #         name = re.search('k.*', name).group(0)
+    #         loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #         agentsDict[name] = BatStorage(id=name, location=loc, minPower=min_power, maxPower=max_power,
+    #                                       voltageLevel=voltage_level, maxCapacity=10*max_power, marginalCost = 30,
+    #                                startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(list(chargingSeriesEV.columns), requiredNodes)[:numAgentsEachType]
+    # else:
+    #     names = chargingSeriesEV.columns.to_series().sample(n=numAgentsEachType).values
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     colName = capacitySeriesEV.filter(like=name[:-5]).columns.values[0]
+    #     agentsDict[name] = EVehicle(id=name, maxCapacity=capacitySeriesEV.loc[0, colName],
+    #                                 absenceTimes=absenceSeriesEV.loc[startDay:endDay, colName],
+    #                                 consumption=consumptionSeriesEV.loc[startDay:endDay, colName], marginalCost = 30,
+    #                            startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(list(loadingSeriesHP.columns), requiredNodes)[:numAgentsEachType]
+    # else:
+    #     names = loadingSeriesHP.columns.to_series().sample(n=numAgentsEachType).values
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     loc, voltage_level, min_power, max_power = getAgentDetails(data, name)
+    #     colName = loadingSeriesHP.filter(like=name).columns.values[0]
+    #     agentsDict[name] = HeatPump(id=name, maxPower=round(loadingSeriesHP.loc[:, colName].max(),5),
+    #                                 maxStorageLevel=25*round(loadingSeriesHP.loc[:, colName].max(),5),
+    #                                 scheduledLoad=loadingSeriesHP.loc[startHour:endHour, colName], marginalCost = 30,
+    #                            startDay=startDay, endDay=endDay)
+    # if requiredNodes:
+    #     names = getAgentsFromNodes(list(loadingSeriesDSM.columns), requiredNodes)[:numAgentsEachType]
+    # else:
+    #     names = loadingSeriesDSM.columns.to_series().sample(n=numAgentsEachType).values
+    # for name in names:
+    #     name = re.search('k.*', name).group(0)
+    #     #TODO check if the latest RA_RD_Import_ file contains maxpower
+    #     colName = loadingSeriesDSM.filter(like=name).columns.values[0]
+    #     agentsDict[name] = DSM(id=name, maxPower=round(loadingSeriesDSM.loc[:, colName].max(),5),
+    #                            scheduledLoad=loadingSeriesDSM.loc[startHour:endHour, colName], marginalCost = 30,
+    #                            startDay=startDay, endDay=endDay)
 
     nameDict, networkDict = RLNetworkInit(agentsDict, alg)
 
@@ -364,13 +342,13 @@ def getAgentDetails(data, name):
     details = data.loc[data['Name'] == name]
     if len(details) == 0:
         loc = 'Standort_'+re.search("k(\d+)[n,d,l]", name).group(1)
-        voltage_level = 10
+        voltage_level = data.loc[data['Location']==loc, 'Un_kV'].values[0]
     else:
         loc = details['Location'].values[0]
         voltage_level = details['Un_kV'].values[0]
     """no information on maximum and minimum power in the latest csv"""
     min_power = 0
-    max_power = 5
+    max_power = 2 if voltage_level==10 else 0.1
     return loc, voltage_level, min_power, max_power
 
 
@@ -434,7 +412,7 @@ def one_step(environment, policySteps, alg, eval_step=False):
         if eval_step:
             filename = "../results/" + alg + "/Actions.pkl"
             with open(filename, "ab") as f:
-                pickle.dump(action, f)
+                pickle.dump([i.action.numpy() for i in total_agents_action], f)
         next_time_step = environment.step(tuple(total_agents_action))
         return time_step, total_agents_action, next_time_step
 
@@ -753,6 +731,9 @@ def saveToFile(totalReturns, loss, congestionDetails, alg):
     filename = "../results/" + alg + "/top 2.5 percent loading.pkl"
     with open(filename, "ab") as f:
         pickle.dump(congestionDetails.loc[:, 'top 2.5 percent loading'].values, f)
+    filename = "../results/" + alg + "/volume.pkl"
+    with open(filename, "ab") as f:
+        pickle.dump(congestionDetails.loc[:, 'volume'].values, f)
 
 def checkTime(lastTime, process):
     presentTime = time.time()

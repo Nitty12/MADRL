@@ -33,11 +33,11 @@ if __name__ == '__main__':
             days 330-360: high overload possibility
             days 105-135 or 300-330: low overload possibility"""
     alg = 'MADDPG'
-    startDay = 330
-    endDay = 360
+    startDay = 0
+    endDay = 363
 
     agentsDict, nameDict, networkDict, numAgents, loadingSeriesHP, chargingSeriesEV, \
-    genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit(alg, startDay, endDay, numAgentsEachType=3)
+    genSeriesPV, genSeriesWind, loadingSeriesDSM = util.agentsInit(alg, startDay, endDay, numAgentsEachType=1)
     nameList = [agent.id for agent in agentsDict.values()]
     typeList = [agent.type for agent in agentsDict.values()]
     grid = Grid(numAgents, nameList, loadingSeriesHP, chargingSeriesEV, genSeriesPV, genSeriesWind, loadingSeriesDSM,
@@ -66,11 +66,11 @@ if __name__ == '__main__':
         pickle.dump(nameList, f)
 
     """Training parameters"""
-    num_iterations = 100000
-    collect_steps_per_iteration = 2
-    eval_interval = 1
+    num_iterations = 1
+    collect_steps_per_iteration = 365
+    eval_interval = 5
     checkpoint_interval = 500
-    batch_size = 8
+    batch_size = 1
 
     replay_buffer = util.replayBufferInit(train_env)
     time_step = train_env.reset()
@@ -114,7 +114,6 @@ if __name__ == '__main__':
         """Collect a few steps using collect_policy and save to the replay buffer."""
         for _ in range(collect_steps_per_iteration):
             util.collect_step(train_env, collect_policySteps, replay_buffer, alg)
-
         """so that the reset step with 0 rewards is not added to the replay buffer"""
         if eval_interval>=(endDay-startDay):
             if num_iter%(endDay-startDay)==0:
@@ -148,3 +147,4 @@ if __name__ == '__main__':
             train_env.reset()
     duration = (time.time()-st)/60
     print("---------------------------------------------%.2f minutes-----------------------------------" % duration)
+    util.saveToFile([], [], dso.congestionDetails, alg)
